@@ -50,6 +50,19 @@ class Part4Mixin:
         refresh_row.add_suffix(refresh_btn)
         self._user_mgmt_group.add(refresh_row)
 
+        # Add-User row (Owner-only, Sichtbarkeit in _show_user_management)
+        self._add_user_row = Adw.ActionRow(
+            title=_("Neuen Benutzer anlegen"),
+            subtitle=_("Username, Passwort, Rolle festlegen"),
+        )
+        add_user_btn = Gtk.Button(icon_name="list-add-symbolic")
+        add_user_btn.add_css_class("suggested-action")
+        add_user_btn.set_valign(Gtk.Align.CENTER)
+        add_user_btn.connect("clicked", self._on_add_user)
+        self._add_user_row.add_suffix(add_user_btn)
+        self._add_user_row.set_visible(False)
+        self._user_mgmt_group.add(self._add_user_row)
+
         # User buttons container
         self._user_buttons_box = Gtk.FlowBox()
         self._user_buttons_box.set_selection_mode(Gtk.SelectionMode.NONE)
@@ -82,9 +95,13 @@ class Part4Mixin:
     def _show_user_management(self, role: str) -> None:
         """Show/hide user management based on role."""
         is_admin = role in ("admin", "owner")
+        is_owner = role == "owner"
         self._user_mgmt_group.set_visible(is_admin)
         self._changes_group.set_visible(is_admin)
         self._tg_perms_group.set_visible(is_admin)
+        # Anlegen + Löschen nur für Owner
+        if hasattr(self, "_add_user_row"):
+            self._add_user_row.set_visible(is_owner)
         if is_admin:
             self._on_load_users(None)
 
@@ -271,6 +288,104 @@ class Part4Mixin:
         """Open profile editor dialog for a user."""
         self._show_user_profile_dialog(user)
 
+    def _on_add_user(self, _btn) -> None:
+        """Owner-only: Dialog zum Anlegen eines neuen Benutzers."""
+        dialog = Adw.Dialog()
+        dialog.set_title(_("Neuen Benutzer anlegen"))
+        dialog.set_content_width(440)
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        box.set_margin_top(16)
+        box.set_margin_bottom(16)
+        box.set_margin_start(16)
+        box.set_margin_end(16)
+        dialog.set_child(box)
+
+        group = Adw.PreferencesGroup()
+        box.append(group)
+
+        username_row = Adw.EntryRow(title=_("Username"))
+        group.add(username_row)
+
+        password_row = Adw.PasswordEntryRow(title=_("Passwort"))
+        group.add(password_row)
+
+        role_row = Adw.ComboRow(title=_("Rolle"))
+        role_model = Gtk.StringList()
+        role_codes = ["user", "readonly", "admin"]
+        for r in [_("Benutzer"), _("Nur Lesen"), _("Admin")]:
+            role_model.append(r)
+        role_row.set_model(role_model)
+        role_row.set_selected(0)
+        group.add(role_row)
+
+        linux_switch = Adw.SwitchRow(
+            title=_("Linux-Account anlegen"),
+            subtitle=_("Erstellt /etc/passwd-Eintrag (für SSH-Login)"),
+        )
+        linux_switch.set_active(False)
+        group.add(linux_switch)
+
+        status_label = Gtk.Label(label="")
+        status_label.add_css_class("dim-label")
+        status_label.set_wrap(True)
+        box.append(status_label)
+
+        btn_box = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL, spacing=12,
+            halign=Gtk.Align.END,
+        )
+        box.append(btn_box)
+
+        cancel_btn = Gtk.Button(label=_("Abbrechen"))
+        cancel_btn.connect("clicked", lambda _: dialog.close())
+        btn_box.append(cancel_btn)
+
+        create_btn = Gtk.Button(label=_("Anlegen"))
+        create_btn.add_css_class("suggested-action")
+
+        def on_create(_b):
+            username = username_row.get_text().strip()
+            password = password_row.get_text()
+            role = role_codes[role_row.get_selected()]
+            create_linux = linux_switch.get_active()
+
+            if not username or not password:
+                status_label.set_label(_("Username und Passwort sind Pflicht."))
+                return
+            if len(password) < 8:
+                status_label.set_label(_("Passwort muss mindestens 8 Zeichen haben."))
+                return
+
+            create_btn.set_sensitive(False)
+            status_label.set_label(_("Lege Benutzer an..."))
+
+            def worker():
+                try:
+                    self.api_client.create_user(
+                        username=username,
+                        password=password,
+                        role=role,
+                        create_linux_account=create_linux,
+                    )
+                    GLib.idle_add(dialog.close)
+                    GLib.idle_add(self._on_load_users, None)
+                except Exception as e:
+                    msg = str(e)
+                    GLib.idle_add(
+                        status_label.set_label, _("Fehler: %s") % msg,
+                    )
+                    GLib.idle_add(create_btn.set_sensitive, True)
+
+            threading.Thread(target=worker, daemon=True).start()
+
+        create_btn.connect("clicked", on_create)
+        btn_box.append(create_btn)
+
+        window = self.get_root()
+        if window:
+            dialog.present(window)
+
     def _show_user_profile_dialog(self, user: dict) -> None:
         """Show profile editor dialog with field-level permissions."""
         user_id = user.get("id", 0)
@@ -432,6 +547,46 @@ class Part4Mixin:
         cancel_btn = Gtk.Button(label=_("Schließen"))
         cancel_btn.connect("clicked", lambda _: dialog.close())
         btn_box.append(cancel_btn)
+
+        # Löschen-Button: nur Owner, nicht für eigenen User
+        is_self = (
+            hasattr(self, "_viewer_user_id")
+            and self._viewer_user_id == user_id
+        )
+        if is_owner and not is_self:
+            delete_btn = Gtk.Button(label=_("Benutzer löschen"))
+            delete_btn.add_css_class("destructive-action")
+
+            def on_delete(_b):
+                confirm = Adw.AlertDialog(
+                    heading=_("Benutzer wirklich löschen?"),
+                    body=_("'%s' wird dauerhaft entfernt. Diese Aktion ist nicht umkehrbar.") % username,
+                )
+                confirm.add_response("cancel", _("Abbrechen"))
+                confirm.add_response("delete", _("Löschen"))
+                confirm.set_response_appearance("delete", Adw.ResponseAppearance.DESTRUCTIVE)
+                confirm.set_default_response("cancel")
+
+                def on_confirm(_d, response):
+                    if response != "delete":
+                        return
+                    delete_btn.set_sensitive(False)
+
+                    def worker():
+                        try:
+                            self.api_client.delete_user(user_id)
+                        except Exception as e:
+                            logger.warning(f"User-Löschung fehlgeschlagen: {e}")
+                        GLib.idle_add(dialog.close)
+                        GLib.idle_add(self._on_load_users, None)
+
+                    threading.Thread(target=worker, daemon=True).start()
+
+                confirm.connect("response", on_confirm)
+                confirm.present(dialog)
+
+            delete_btn.connect("clicked", on_delete)
+            btn_box.append(delete_btn)
 
         save_btn = Gtk.Button(label=_("Speichern"))
         save_btn.add_css_class("suggested-action")
