@@ -685,6 +685,24 @@ class APIClient(AuthMixin, SettingsMixin, DrawsMixin, GenerationMixin, MlTrainin
         """DB-Integritätsbericht (Lücken-Erkennung pro Ziehtag)."""
         return self._request("GET", "/db/integrity").json()
 
+    def delete_predictions_for_date(
+        self, draw_day: str, draw_date: str, keep_purchased: bool = True,
+    ) -> dict:
+        """Alle Predictions einer Ziehung löschen (gekaufte bleiben default)."""
+        return self._request(
+            "DELETE", f"/predictions/{draw_day}/{draw_date}",
+            params={"keep_purchased": "true" if keep_purchased else "false"},
+        ).json()
+
+    def regenerate_predictions(
+        self, draw_day: str, keep_purchased: bool = True,
+    ) -> dict:
+        """Aktuelle Ziehung loeschen + neu generieren mit User-Counts."""
+        return self._request(
+            "POST", f"/generate/regenerate/{draw_day}",
+            params={"keep_purchased": "true" if keep_purchased else "false"},
+        ).json()
+
     def list_db_backups(self) -> list[dict]:
         """Liste der vorhandenen DB-Backups (Datei, Größe, Datum)."""
         return self._request("GET", "/admin/db/backups").json()

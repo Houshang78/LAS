@@ -49,12 +49,18 @@ class Part2Mixin:
             "max_model_age_days": int(self._max_model_age.get_value()),
         }
 
-        # Generation
+        # Generation — User-Counts pro Strategie sammeln (0 bleibt 0)
+        counts_per_strategy = {
+            strat: int(row.get_value())
+            for strat, row in getattr(self, "_counts_per_strategy_rows", {}).items()
+        }
         gen_data = {
             "enabled": self._autogen_enabled.get_active(),
             "generate_after_train": self._gen_after_train.get_active(),
             "auto_compare": self._auto_compare.get_active(),
             "count_per_strategy": int(self._count_per_strategy.get_value()),
+            "counts_per_strategy": counts_per_strategy,
+            "auto_count_tuning": self._auto_count_tuning.get_active(),
             "purchase_count": int(self._purchase_count.get_value()),
         }
 
@@ -137,6 +143,11 @@ class Part2Mixin:
             config.auto_generation.generate_after_train = self._gen_after_train.get_active()
             config.auto_generation.auto_compare = self._auto_compare.get_active()
             config.auto_generation.count_per_strategy = int(self._count_per_strategy.get_value())
+            config.auto_generation.counts_per_strategy = {
+                strat: int(row.get_value())
+                for strat, row in getattr(self, "_counts_per_strategy_rows", {}).items()
+            }
+            config.auto_generation.auto_count_tuning = self._auto_count_tuning.get_active()
             config.auto_generation.purchase_count = int(self._purchase_count.get_value())
 
         # Server-Verbindung (immer lokal speichern)

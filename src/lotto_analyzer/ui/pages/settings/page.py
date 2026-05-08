@@ -350,9 +350,30 @@ class SettingsPage(Part1Mixin, Part2Mixin, Part3Mixin, Part4Mixin, BasePage):
         autogen_group.add(self._auto_compare)
 
         self._count_per_strategy = Adw.SpinRow.new_with_range(50, 500, 10)
-        self._count_per_strategy.set_title(_("Tipps pro Strategie"))
+        self._count_per_strategy.set_title(_("Tipps pro Strategie (Default)"))
+        self._count_per_strategy.set_subtitle(_("Wird verwendet wenn unten kein Wert pro Strategie gesetzt ist"))
         self._count_per_strategy.set_value(config.auto_generation.count_per_strategy)
         autogen_group.add(self._count_per_strategy)
+
+        # Pro-Strategie Counts (User-Override). 0 = Default benutzen.
+        self._counts_per_strategy_rows: dict[str, Adw.SpinRow] = {}
+        cps = config.auto_generation.counts_per_strategy or {}
+        for strat in config.auto_generation.strategies:
+            row = Adw.SpinRow.new_with_range(0, 5000, 10)
+            row.set_title(_("Anzahl: ") + strat)
+            row.set_subtitle(_("0 = Default-Wert benutzen"))
+            row.set_value(int(cps.get(strat, 0)))
+            autogen_group.add(row)
+            self._counts_per_strategy_rows[strat] = row
+
+        self._auto_count_tuning = Adw.SwitchRow(
+            title=_("Auto-Tuning der Anzahl"),
+            subtitle=_("AdaptiveGenerationCount darf User-Werte überschreiben"),
+        )
+        self._auto_count_tuning.set_active(
+            getattr(config.auto_generation, "auto_count_tuning", False),
+        )
+        autogen_group.add(self._auto_count_tuning)
 
         self._purchase_count = Adw.SpinRow.new_with_range(1, 20, 1)
         self._purchase_count.set_title(_("Kaufanzahl (Telegram)"))

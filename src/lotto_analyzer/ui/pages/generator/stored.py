@@ -109,6 +109,18 @@ class StoredMixin:
         self.register_readonly_button(self._stored_cleanup_btn)
         filter_box.append(self._stored_cleanup_btn)
 
+        # Re-Generate-Button (loescht aktuelle Ziehung + neu generieren)
+        self._stored_regen_btn = Gtk.Button(label=_("Neu generieren"))
+        self._stored_regen_btn.set_tooltip_text(
+            _("Loescht alle Tipps der aktuellen Ziehung (gekaufte bleiben) "
+              "und generiert mit aktuellen Strategie-Anzahlen neu")
+        )
+        self._stored_regen_btn.add_css_class("flat")
+        self._stored_regen_btn.set_icon_name("view-refresh-symbolic")
+        self._stored_regen_btn.connect("clicked", self._on_stored_regenerate)
+        self.register_readonly_button(self._stored_regen_btn)
+        filter_box.append(self._stored_regen_btn)
+
         # Kopieren-Button
         stored_copy_btn = Gtk.Button(label=_("Kopieren"))
         stored_copy_btn.add_css_class("flat")
@@ -415,6 +427,45 @@ class StoredMixin:
             draw_date = self._stored_date_combo.get_active_text()
             if draw_day and draw_date:
                 self._load_stored_predictions(draw_day, draw_date)
+
+    def _on_stored_regenerate(self, btn) -> None:
+        """Aktuelle Ziehung loeschen + neu generieren mit User-Counts."""
+        draw_day = self._stored_day_combo.get_active_text()
+        if not draw_day:
+            return
+        self._stored_regen_btn.set_sensitive(False)
+
+        def _regen():
+            try:
+                if not self.api_client:
+                    GLib.idle_add(self._on_regen_done, 0, 0, draw_day)
+                    return
+                result = self.api_client.regenerate_predictions(
+                    draw_day, keep_purchased=True,
+                )
+                deleted = result.get("deleted", 0)
+                generated = result.get("generated", 0)
+                GLib.idle_add(self._on_regen_done, deleted, generated, draw_day)
+            except Exception as e:
+                logger.error(f"Re-Generate fehlgeschlagen: {e}")
+                GLib.idle_add(self._on_regen_done, -1, 0, draw_day)
+
+        threading.Thread(target=_regen, daemon=True).start()
+
+    def _on_regen_done(self, deleted: int, generated: int, draw_day: str) -> bool:
+        self._stored_regen_btn.set_sensitive(True)
+        if deleted < 0:
+            logger.warning("Re-Generate Fehler — siehe Server-Log")
+        else:
+            logger.info(
+                f"Re-Generate {draw_day}: {deleted} geloescht, {generated} neu"
+            )
+        # Datum-Liste neu laden + Predictions neu anzeigen
+        try:
+            self._on_stored_day_changed(self._stored_day_combo)
+        except Exception:
+            pass
+        return False
 
     def _on_stored_cleanup(self, btn) -> None:
         """Predictions unter Schwelle löschen."""
