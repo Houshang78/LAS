@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lotto-analyzer"
-version = "1.2.9"
+version = "1.2.10"
 description = "lotto-analyzer System (GTK4 Desktop Client)"
 requires-python = ">=3.12"
 dependencies = [
