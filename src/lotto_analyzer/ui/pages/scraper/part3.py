@@ -29,6 +29,75 @@ DAY_LABELS = {
 }
 
 
+def _format_integrity_report(data: dict) -> str:
+    """Server-Integrity-Bericht in lesbaren Text umwandeln."""
+    lines = ["=== DB-INTEGRITÄTSBERICHT ===\n"]
+    checked_at = data.get("checked_at", "?")
+    lines.append(f"Geprüft am: {checked_at}")
+    lines.append(
+        f"Gesamt komplett: {'✅ ja' if data.get('overall_complete') else '⚠️ nein'}"
+    )
+    statuses = data.get("statuses", []) or []
+    for s in statuses:
+        day = DAY_LABELS.get(s.get("draw_day", ""), s.get("draw_day", ""))
+        total = s.get("total_draws", 0)
+        coverage = s.get("coverage_pct", 0)
+        first = s.get("first_date", "?")
+        last = s.get("last_date", "?")
+        complete = s.get("is_complete", False)
+        marker = "✅" if complete else "⚠️"
+        lines.append(
+            f"\n{marker} {day}: {total} Ziehungen "
+            f"({first} → {last}, {coverage}% Abdeckung)"
+        )
+        missing = s.get("missing_years") or []
+        if missing:
+            lines.append(f"    Fehlende Jahre: {missing}")
+    needs_crawl = data.get("needs_crawl") or []
+    if needs_crawl:
+        lines.append("\n⚠️ Empfohlene Auto-Crawls:")
+        for gap in needs_crawl:
+            lines.append(
+                f"  {gap.get('draw_day', '?')}: "
+                f"{gap.get('year_from', '?')}–{gap.get('year_to', '?')}"
+            )
+    return "\n".join(lines)
+
+
+def _api_draws_to_objs(draws_raw: list[dict]) -> list:
+    """B.4: API liefert dicts, Code erwartet Object-Attribute (d.draw_date,
+    d.numbers, d.super_number, d.bonus_numbers, d.is_eurojackpot).
+    Wir konvertieren in einfache Namespaces mit geparsten Date-Objekten,
+    sodass die Loops unten ohne Refactor weiterlaufen.
+    """
+    from types import SimpleNamespace
+    out = []
+    for d in draws_raw:
+        if not isinstance(d, dict):
+            out.append(d)
+            continue
+        raw_date = d.get("draw_date") or ""
+        try:
+            dd = datetime.fromisoformat(str(raw_date).split("T")[0]).date()
+        except Exception:
+            dd = None
+        nums = d.get("numbers") or []
+        if isinstance(nums, str):
+            nums = [int(n) for n in nums.split(",") if n.strip().isdigit()]
+        bonus = d.get("bonus_numbers") or []
+        if isinstance(bonus, str):
+            bonus = [int(n) for n in bonus.split(",") if n.strip().isdigit()]
+        ns = SimpleNamespace(
+            draw_date=dd,
+            numbers=list(nums),
+            super_number=d.get("super_number"),
+            bonus_numbers=list(bonus),
+            is_eurojackpot=bool(bonus) or d.get("lottery") == "EUROJACKPOT",
+        )
+        out.append(ns)
+    return out
+
+
 class Part3Mixin:
     """Part3 Mixin."""
 
@@ -39,25 +108,28 @@ class Part3Mixin:
         return False
 
     def _on_verify_source_vs_db(self, button: Gtk.Button) -> None:
-        """Quelle-vs-DB Verifikation starten."""
+        """DB-Integritätsprüfung über Server-Endpoint /db/integrity."""
         self._verify_btn.set_sensitive(False)
 
         def worker():
             try:
-                report = self._verify_source_vs_db()
+                if not self.api_client:
+                    GLib.idle_add(self._ai_panel.set_result, _("Server nicht verbunden."))
+                    return
+                data = self.api_client.db_integrity()
+                report = _format_integrity_report(data)
                 if self._ai_analyst or self.api_client:
-                    prompt = f"""Du bist ein Datenqualitaets-Pruefer für Lotto 6aus49.
+                    prompt = f"""Du bist ein Datenqualitaets-Prüfer für Lotto 6aus49.
 
-Hier ist ein Verifikationsbericht — er vergleicht die Daten aus der Quelle (Webseite oder CSV)
-mit dem was in der SQLite-Datenbank gespeichert wurde.
+Hier ist ein Integritätsbericht der Server-Datenbank — er zeigt für jeden Ziehtag,
+ob die DB vollständig ist oder Lücken (fehlende Jahre) hat.
 
 {report}
 
-Pruefe bitte:
-1. Stimmen die Quelldaten mit der DB ueberein? Gab es Datenverluste beim Speichern?
-2. Wenn Abweichungen: Sind die Quell- oder DB-Daten korrekt? (6 verschiedene Zahlen 1-49, SZ 0-9)
-3. Wenn Daten fehlen: Warum koennten sie nicht gespeichert worden sein? (Duplikat? Format-Fehler?)
-4. Fazit: Ist die Daten-Pipeline zuverlässig?
+Prüfe bitte:
+1. Sind alle Ziehtage komplett oder gibt es Lücken?
+2. Wenn Lücken: was bedeutet das für die ML-Trainingsdaten?
+3. Empfehlung: muss ein Crawl der fehlenden Jahre ausgelöst werden?
 
 Antworte auf Deutsch, kurz und praezise."""
                     try:
@@ -68,32 +140,32 @@ Antworte auf Deutsch, kurz und praezise."""
                 else:
                     GLib.idle_add(self._ai_panel.set_result, report)
             except Exception as e:
-                logger.warning(f"Verifikation fehlgeschlagen: {e}")
-                GLib.idle_add(self._ai_panel.set_result, f"Verifikation fehlgeschlagen: {e}")
+                logger.warning(f"Integritätsprüfung fehlgeschlagen: {e}")
+                GLib.idle_add(self._ai_panel.set_result, f"Integritätsprüfung fehlgeschlagen: {e}")
             finally:
                 GLib.idle_add(self._verify_btn.set_sensitive, True)
                 GLib.idle_add(self._stop_ai_spinner)
 
-        self._ai_panel.set_result(_("Verifikation läuft..."))
+        self._ai_panel.set_result(_("Integritätsprüfung läuft..."))
         self._ai_panel._spinner.set_visible(True)
         self._ai_panel._spinner.start()
         threading.Thread(target=worker, daemon=True).start()
 
     # ═══════════════════════════════════════════
-    # AI-Kontrolle 2: DB-Qualitätspruefung
+    # AI-Kontrolle 2: DB-Qualitätsprüfung
     # ═══════════════════════════════════════════
 
     def _build_quality_report(self) -> str:
         """Datenqualitaetsbericht."""
-        if not self.db:
-            return _("Keine Datenbank verfügbar.")
+        # B.4: API-only — kein self.db mehr.
+        if not self.api_client:
+            return _("Server nicht verbunden.")
 
         lines = ["=== DB-QUALITAETSBERICHT ===\n"]
 
         for day_str in self._config.draw_days:
-            day = DrawDay(day_str)
             day_name = DAY_LABELS.get(day_str, day_str)
-            draws = self.db.get_draws(day)
+            draws = _api_draws_to_objs(self.api_client.get_draws(day_str))
             lines.append(f"--- {day_name} ({len(draws)} Ziehungen) ---")
 
             if not draws:
@@ -170,9 +242,9 @@ Antworte auf Deutsch, kurz und praezise."""
             "saturday": "Sa", "wednesday": "Mi",
             "tuesday": "Di", "friday": "Fr",
         }
+        # D2: Counts via API statt direkter DB.
         for day_str in self._config.draw_days:
-            day = DrawDay(day_str)
-            cnt = self.db.get_draw_count(day)
+            cnt = self.api_client.get_draw_count(day_str) if self.api_client else 0
             total += cnt
             abbr = _day_abbrev.get(day_str, day_str[:2])
             parts.append(f"{cnt} {abbr}")
@@ -180,7 +252,7 @@ Antworte auf Deutsch, kurz und praezise."""
         return "\n".join(lines)
 
     def _on_ai_quality_check(self, button: Gtk.Button) -> None:
-        """DB-Qualitätspruefung."""
+        """DB-Qualitätsprüfung."""
         if not self.db and not self.api_client:
             self._ai_panel.set_result(_("Keine Datenbank verfügbar."))
             return
@@ -214,13 +286,13 @@ Antworte auf Deutsch, kurz und praezise."""
                 else:
                     GLib.idle_add(self._ai_panel.set_result, report)
             except Exception as e:
-                logger.warning(f"Qualitätspruefung fehlgeschlagen: {e}")
-                GLib.idle_add(self._ai_panel.set_result, f"Qualitätspruefung fehlgeschlagen: {e}")
+                logger.warning(f"Qualitätsprüfung fehlgeschlagen: {e}")
+                GLib.idle_add(self._ai_panel.set_result, f"Qualitätsprüfung fehlgeschlagen: {e}")
             finally:
                 GLib.idle_add(self._quality_btn.set_sensitive, True)
                 GLib.idle_add(self._stop_ai_spinner)
 
-        self._ai_panel.set_result(_("Qualitätspruefung läuft..."))
+        self._ai_panel.set_result(_("Qualitätsprüfung läuft..."))
         self._ai_panel._spinner.set_visible(True)
         self._ai_panel._spinner.start()
         threading.Thread(target=worker, daemon=True).start()
@@ -239,9 +311,11 @@ Antworte auf Deutsch, kurz und praezise."""
         _weekday_map = {"saturday": 5, "wednesday": 2, "tuesday": 1, "friday": 4}
 
         for day_str in self._config.draw_days:
-            day = DrawDay(day_str)
             day_name = DAY_LABELS.get(day_str, day_str)
-            draws = self.db.get_draws(day)
+            # B.4: API-only.
+            draws = _api_draws_to_objs(
+                self.api_client.get_draws(day_str) if self.api_client else []
+            )
             lines.append(f"--- {day_name} ({len(draws)} Ziehungen) ---")
 
             if not draws:
@@ -351,7 +425,7 @@ Antworte auf Deutsch, kurz und praezise."""
 
 {report}
 
-Pruefe gruendlich auf Anomalien:
+Prüfe gruendlich auf Anomalien:
 1. Gibt es Duplikate (gleiche Daten)? Falls ja: Welche müssen gelöscht werden?
 2. Stimmen die Wochentage? (z.B. Samstag-Ziehungen müssen am Samstag stattfinden)
 3. Sind alle Zahlen im gültigen Bereich? Gibt es verdaechtige Muster?
@@ -398,12 +472,12 @@ Antworte auf Deutsch, strukturiert und praezise."""
                 else:
                     report = self._build_stat_verification()
                 if self._ai_analyst or self.api_client:
-                    prompt = f"""Du bist ein Lotto-Datenanalyst. Pruefe ob die Datengrundlage für die
+                    prompt = f"""Du bist ein Lotto-Datenanalyst. Prüfe ob die Datengrundlage für die
 Statistik-Analyse korrekt und zuverlässig ist.
 
 {report}
 
-Pruefe bitte:
+Prüfe bitte:
 1. Sind genug Daten für eine aussagekraeftige Statistik vorhanden? (Minimum ~100 Ziehungen)
 2. Sind die Häufigkeitsverteilungen plausibel? (Bei 6 aus 49 sollte jede Zahl ca. 12.2% der Ziehungen vorkommen)
 3. Stimmt die Superzahl-Verteilung? (Gleichverteilt 0-9, ca. 10% pro Zahl)
@@ -441,9 +515,11 @@ Antworte auf Deutsch, kurz und praezise."""
         lines = ["=== STATISTIK-DATENGRUNDLAGE ===\n"]
 
         for day_str in self._config.draw_days:
-            day = DrawDay(day_str)
             day_name = DAY_LABELS.get(day_str, day_str)
-            draws = self.db.get_draws(day)
+            # B.4: API-only.
+            draws = _api_draws_to_objs(
+                self.api_client.get_draws(day_str) if self.api_client else []
+            )
             lines.append(f"--- {day_name}: {len(draws)} Ziehungen ---")
 
             if len(draws) < 10:

@@ -237,56 +237,50 @@ class AIPanel(Gtk.Box):
         )
 
     def _build_full_context(self) -> str:
-        """DB-Kontext für AI zusammenstellen."""
-        if not self._db and self.api_client:
-            try:
-                stats = self.api_client.get_db_stats()
-                return f"=== LOTTO SERVER-KONTEXT ===\nDB-Statistik: {stats}\n"
-            except Exception as e:
-                logger.warning(f"DB-Stats via API laden fehlgeschlagen: {e}")
-                return ""
-        if not self._db:
+        """DB-Kontext für AI zusammenstellen.
+
+        D2: Architektur — Client ist UI-only. AI-Kontext wird vom Server
+        über /draws/count/{day} + /draws/latest/{day} aggregiert. Kein
+        direkter self._db-Zugriff mehr.
+        """
+        if not self.api_client:
             return ""
         try:
-            parts = []
-            for day in [DrawDay.SATURDAY, DrawDay.WEDNESDAY,
-                        DrawDay.TUESDAY, DrawDay.FRIDAY]:
-                latest = self._db.get_draws(day)
-                count = self._db.get_draw_count(day)
-                if count > 0:
-                    parts.append(f"\n{day.value}: {count} Ziehungen")
-                    if latest:
-                        last_5 = latest[-5:]
-                        draws_txt = []
-                        for d in last_5:
-                            nums = sorted(d.numbers)
-                            if d.is_eurojackpot:
-                                bonus = sorted(d.bonus_numbers) if d.bonus_numbers else []
-                                draws_txt.append(
-                                    f"  {d.draw_date.strftime('%d.%m.%Y')}: {nums} EZ:{bonus}"
-                                )
-                            else:
-                                sz = d.super_number if d.super_number is not None else "?"
-                                draws_txt.append(
-                                    f"  {d.draw_date.strftime('%d.%m.%Y')}: {nums} SZ:{sz}"
-                                )
+            counts: dict[str, int] = {}
+            latest_per_day: dict = {}
+            for day_str in ["saturday", "wednesday", "tuesday", "friday"]:
+                counts[day_str] = self.api_client.get_draw_count(day_str)
+                latest_per_day[day_str] = self.api_client.get_latest_draw(day_str)
+
+            parts: list[str] = [
+                "=== LOTTO DATENBANK-KONTEXT ===",
+                f"6aus49 — Sa: {counts.get('saturday', 0)} | Mi: {counts.get('wednesday', 0)}",
+                f"EuroJackpot — Di: {counts.get('tuesday', 0)} | Fr: {counts.get('friday', 0)}",
+                "",
+            ]
+            for day_str in ["saturday", "wednesday", "tuesday", "friday"]:
+                if counts.get(day_str, 0) <= 0:
+                    continue
+                parts.append(f"{day_str}: {counts[day_str]} Ziehungen")
+                latest = latest_per_day.get(day_str)
+                if isinstance(latest, dict):
+                    nums = latest.get("numbers", [])
+                    bonus = latest.get("bonus_numbers", [])
+                    sz = latest.get("super_number")
+                    if bonus:
                         parts.append(
-                            f"Letzte 5 {day.value}-Ziehungen:\n"
-                            + "\n".join(draws_txt)
+                            f"  Letzte: {latest.get('draw_date', '?')}: {nums} EZ:{bonus}"
                         )
-                    parts.append("---")
-            sat = self._db.get_draw_count(DrawDay.SATURDAY)
-            wed = self._db.get_draw_count(DrawDay.WEDNESDAY)
-            tue = self._db.get_draw_count(DrawDay.TUESDAY)
-            fri = self._db.get_draw_count(DrawDay.FRIDAY)
-            parts.insert(0,
-                f"=== LOTTO DATENBANK-KONTEXT ===\n"
-                f"6aus49 — Sa: {sat} | Mi: {wed}\n"
-                f"EuroJackpot — Di: {tue} | Fr: {fri}\n"
-            )
+                    elif sz is not None:
+                        parts.append(
+                            f"  Letzte: {latest.get('draw_date', '?')}: {nums} SZ:{sz}"
+                        )
+                    else:
+                        parts.append(f"  Letzte: {latest.get('draw_date', '?')}: {nums}")
+                parts.append("---")
             return "\n".join(parts)
         except Exception as e:
-            logger.debug(f"DB-Kontext zusammenstellen fehlgeschlagen: {e}")
+            logger.warning(f"DB-Kontext zusammenstellen fehlgeschlagen: {e}")
             return ""
 
     def _on_ai_response(self, text: str) -> None:

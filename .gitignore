@@ -1,3 +1,5 @@
+.gitignore
+.claudeignore
 __pycache__/
 *.py[cod]
 *.egg-info/
@@ -10,7 +12,12 @@ venv/
 .env
 *.db
 *.sqlite3
+*.log
+data/
 .ruff_cache/
 .mypy_cache/
 .pytest_cache/
 *.swp
+CLAUDE.md
+PLAN.md
+2026-*

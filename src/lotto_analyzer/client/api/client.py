@@ -1,4 +1,4 @@
-"""REST client: connects GTK4 GUI to LottoAnalyzer server."""
+"""REST client: connects GTK4 GUI to lotto-analyzer server."""
 
 import threading
 import time
@@ -246,6 +246,420 @@ class APIClient(AuthMixin, SettingsMixin, DrawsMixin, GenerationMixin, MlTrainin
         resp.raise_for_status()
         return resp.json()
 
+    # ── D2: Server-side replacements für direkte DB-Calls ──
+    # Diese Methoden lösen das Architektur-Problem auf: Pages nutzten
+    # vorher self.db.* (lokale SQLite-Query gegen Server-DB → Pfad-
+    # Annahme), jetzt sprechen sie über HTTP gegen den Server.
+
+    def get_latest_draw(self, draw_day: str) -> dict | None:
+        """GET /draws/latest/{draw_day} — None bei 404."""
+        try:
+            return self._request("GET", f"/draws/latest/{draw_day}").json()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                return None
+            raise
+
+    def get_draw_count(self, draw_day: str) -> int:
+        """GET /draws/count/{draw_day} — 0 wenn unbekannt/nicht-erreichbar."""
+        try:
+            data = self._request("GET", f"/draws/count/{draw_day}").json()
+            return int(data.get("count", 0))
+        except Exception:
+            return 0
+
+    def get_strategy_performance(self, draw_day: str) -> list[dict]:
+        """GET /performance/{draw_day} — leere Liste bei Fehler."""
+        try:
+            data = self._request("GET", f"/performance/{draw_day}").json()
+            perf = data.get("performance") or []
+            return perf if isinstance(perf, list) else []
+        except Exception:
+            return []
+
+    def get_cycle_reports(self, draw_day: str | None = None, limit: int = 50) -> list[dict]:
+        """GET /reports — alle Cycle-Reports (optional gefiltert)."""
+        params: dict = {"limit": int(limit)}
+        if draw_day:
+            params["draw_day"] = draw_day
+        try:
+            data = self._request("GET", "/reports", params=params).json()
+            rep = data.get("reports") or []
+            return rep if isinstance(rep, list) else []
+        except Exception:
+            return []
+
+    def get_training_runs(self, draw_day: str, limit: int = 20) -> list[dict]:
+        """GET /ml/training-history/{draw_day} — leere Liste bei Fehler."""
+        try:
+            data = self._request(
+                "GET", f"/ml/training-history/{draw_day}",
+                params={"limit": int(limit)},
+            ).json()
+            runs = data.get("runs") or data.get("history") or data
+            return runs if isinstance(runs, list) else []
+        except Exception:
+            return []
+
+    # ── D3: User/SSH-Key/Cert-Verwaltung (admin) ──
+    # Spiegeln die /admin/users + /admin/keys + /admin/certificates
+    # Endpoints. Vorher importierte der Client UserDatabase + key_auth
+    # direkt aus dem Server-Modul — Architekturbruch + Sicherheitsrisiko.
+
+    def list_users(self) -> list[dict]:
+        """GET /admin/users — alle registrierten User."""
+        try:
+            return self._request("GET", "/admin/users").json()
+        except Exception:
+            return []
+
+    def add_user_key(self, user_id: int, public_key: str, description: str = "") -> dict:
+        """POST /admin/users/{user_id}/keys — SSH-Key registrieren.
+
+        Server validiert den Key (parse_public_key), berechnet Fingerprint
+        und PEM. Client schickt nur den Roh-Key + Beschreibung.
+        """
+        return self._request(
+            "POST", f"/admin/users/{int(user_id)}/keys",
+            json={"public_key": public_key, "description": description},
+        ).json()
+
+    def remove_user_key(self, fingerprint: str) -> dict:
+        """DELETE /admin/keys/{fingerprint}."""
+        return self._request("DELETE", f"/admin/keys/{fingerprint}").json()
+
+    def list_user_keys(self, user_id: int) -> list[dict]:
+        """GET /admin/users/{user_id}/keys."""
+        try:
+            return self._request("GET", f"/admin/users/{int(user_id)}/keys").json()
+        except Exception:
+            return []
+
+    def issue_certificate(self, user_id: int, days_valid: int) -> dict:
+        """POST /admin/users/{user_id}/certificates — Cert + Key zurück.
+
+        Response enthält cert_pem + key_pem + serial + fingerprint. Der
+        Client zeigt Serial dem Admin an, der Cert/Key dem Endbenutzer
+        weitergibt (out-of-band).
+        """
+        return self._request(
+            "POST", f"/admin/users/{int(user_id)}/certificates",
+            json={"days_valid": int(days_valid)},
+        ).json()
+
+    def list_certificates(self) -> list[dict]:
+        """GET /admin/certificates — alle Client-Certs."""
+        try:
+            return self._request("GET", "/admin/certificates").json()
+        except Exception:
+            return []
+
+    def revoke_certificate(self, serial: str) -> dict:
+        """POST /admin/certificates/{serial}/revoke."""
+        return self._request("POST", f"/admin/certificates/{serial}/revoke").json()
+
+    # ── D3: User-CRUD + Audit + API-Key (admin) ──
+
+    def create_user(
+        self, username: str, password: str, role: str,
+        permissions: list[str] | None = None,
+        create_linux_account: bool = False,
+        ssh_public_keys: list[str] | None = None,
+    ) -> dict:
+        """POST /admin/users — neuen User anlegen.
+
+        Server hashed das Passwort, validiert Rolle + Permissions, legt
+        optional Linux-Account an. Client schickt nur Roh-Daten.
+        """
+        body: dict = {"username": username, "password": password, "role": role}
+        if permissions is not None:
+            body["permissions"] = permissions
+        if create_linux_account:
+            body["create_linux_account"] = True
+        if ssh_public_keys:
+            body["ssh_public_keys"] = ssh_public_keys
+        return self._request("POST", "/admin/users", json=body).json()
+
+    def update_user(self, user_id: int, **fields) -> dict:
+        """PUT /admin/users/{user_id} — Felder aktualisieren.
+
+        Akzeptiert: password, permissions, is_active, ban_reason, role.
+        Server hashed neue Passwörter selbst.
+        """
+        return self._request(
+            "PUT", f"/admin/users/{int(user_id)}", json=fields,
+        ).json()
+
+    def admin_delete_user(self, user_id: int) -> dict:
+        """DELETE /admin/users/{user_id}."""
+        return self._request("DELETE", f"/admin/users/{int(user_id)}").json()
+
+    def admin_ban_user(self, user_id: int, reason: str = "") -> dict:
+        """POST /admin/users/{user_id}/ban."""
+        return self._request(
+            "POST", f"/admin/users/{int(user_id)}/ban",
+            json={"reason": reason},
+        ).json()
+
+    def admin_disconnect_user(self, user_id: int) -> dict:
+        """POST /admin/users/{user_id}/disconnect — aktive Sessions kappen."""
+        return self._request(
+            "POST", f"/admin/users/{int(user_id)}/disconnect",
+        ).json()
+
+    def admin_activate_user(self, user_id: int) -> dict:
+        """POST /admin/users/{user_id}/activate."""
+        return self._request(
+            "POST", f"/admin/users/{int(user_id)}/activate",
+        ).json()
+
+    def admin_deactivate_user(self, user_id: int) -> dict:
+        """POST /admin/users/{user_id}/deactivate."""
+        return self._request(
+            "POST", f"/admin/users/{int(user_id)}/deactivate",
+        ).json()
+
+    def delete_audit_entry(self, entry_id: int) -> dict:
+        """DELETE /admin/audit-log/{entry_id}."""
+        return self._request(
+            "DELETE", f"/admin/audit-log/{int(entry_id)}",
+        ).json()
+
+    def rotate_api_key(self) -> dict:
+        """POST /admin/api-keys/rotate — neuer Key im Klartext zurück."""
+        return self._request("POST", "/admin/api-keys/rotate").json()
+
+    def get_audit_log(self, limit: int = 50) -> list[dict]:
+        """GET /admin/audit-log — letzte N Audit-Einträge."""
+        try:
+            data = self._request(
+                "GET", "/admin/audit-log", params={"limit": int(limit)},
+            ).json()
+            return data if isinstance(data, list) else data.get("entries", [])
+        except Exception:
+            return []
+
+    def list_api_keys(self) -> list[dict]:
+        """GET /admin/api-keys — alle API-Keys (Hash + Prefix)."""
+        try:
+            return self._request("GET", "/admin/api-keys").json()
+        except Exception:
+            return []
+
+    def list_public_keys(self, user_id: int | None = None) -> list[dict]:
+        """GET /admin/users/{id}/keys oder /admin/keys (alle)."""
+        try:
+            if user_id is not None:
+                return self._request(
+                    "GET", f"/admin/users/{int(user_id)}/keys",
+                ).json()
+            return self._request("GET", "/admin/keys").json()
+        except Exception:
+            return []
+
+    # ── B: TLS + Service-Status (B.1 Endpoints) ──
+
+    def get_tls_status(self) -> dict:
+        """GET /admin/tls/status — {configured, status, expires_at, days_remaining}."""
+        try:
+            return self._request("GET", "/admin/tls/status").json()
+        except Exception as e:
+            return {"configured": False, "status": "error", "error": str(e)}
+
+    def generate_tls_cert(self) -> dict:
+        """POST /admin/tls/generate — Self-Signed-Cert auf dem Server erzeugen."""
+        return self._request("POST", "/admin/tls/generate").json()
+
+    def get_service_status(self) -> dict:
+        """GET /admin/service/status — {running, enabled, name}."""
+        try:
+            return self._request("GET", "/admin/service/status").json()
+        except Exception as e:
+            return {"running": False, "enabled": False, "error": str(e)}
+
+    def service_action(self, action: str) -> dict:
+        """POST /admin/service/{action} — start/stop/restart/enable/disable."""
+        return self._request("POST", f"/admin/service/{action}").json()
+
+    # ── B.3: Reports + Prizes + Predictions (Replacements) ──
+
+    def get_cycle_report(self, report_id: str) -> dict | None:
+        """GET /reports/{report_id} — einzelner Cycle-Report."""
+        try:
+            return self._request("GET", f"/reports/{report_id}").json()
+        except Exception:
+            return None
+
+    def get_draw_prizes(self, draw_day: str, draw_date: str) -> list[dict]:
+        """GET /prizes/{draw_day}/{draw_date} — Gewinnquoten der Ziehung."""
+        try:
+            data = self._request(
+                "GET", f"/prizes/{draw_day}/{draw_date}",
+            ).json()
+            if isinstance(data, list):
+                return data
+            return data.get("prizes") or data.get("classes") or []
+        except Exception:
+            return []
+
+    def get_predictions_for_date(
+        self, draw_day: str, draw_date: str,
+    ) -> list[dict]:
+        """GET /predictions/{draw_day}/{draw_date} — alle Predictions."""
+        try:
+            data = self._request(
+                "GET", f"/predictions/{draw_day}/{draw_date}",
+            ).json()
+            if isinstance(data, list):
+                return data
+            return data.get("predictions") or []
+        except Exception:
+            return []
+
+    def get_draws(
+        self, draw_day: str,
+        year_from: int | None = None, year_to: int | None = None,
+    ) -> list[dict]:
+        """GET /draws/{draw_day} — alle Draws des Tages, optional Jahr-Filter."""
+        params: dict = {}
+        if year_from is not None:
+            params["year_from"] = int(year_from)
+        if year_to is not None:
+            params["year_to"] = int(year_to)
+        try:
+            data = self._request(
+                "GET", f"/draws/{draw_day}",
+                params=params if params else None,
+            ).json()
+            if isinstance(data, list):
+                return data
+            return data.get("draws") or []
+        except Exception:
+            return []
+
+    def get_prediction_dates(self, draw_day: str) -> list[str]:
+        """GET /predictions/dates/{draw_day} — alle Daten mit Predictions."""
+        try:
+            data = self._request(
+                "GET", f"/predictions/dates/{draw_day}",
+            ).json()
+            if isinstance(data, list):
+                return data
+            return data.get("dates") or []
+        except Exception:
+            return []
+
+    def get_predictions_paginated(
+        self, draw_day: str, draw_date: str,
+        offset: int = 0, limit: int = 200,
+    ) -> dict:
+        """GET /predictions/{draw_day}/{draw_date}?offset=&limit=
+
+        Response: `{predictions: [...], total: int, offset, limit}`.
+        """
+        try:
+            return self._request(
+                "GET", f"/predictions/{draw_day}/{draw_date}",
+                params={"offset": int(offset), "limit": int(limit)},
+            ).json()
+        except Exception:
+            return {"predictions": [], "total": 0, "offset": offset, "limit": limit}
+
+    def delete_low_match_predictions(
+        self, draw_day: str, draw_date: str, min_matches: int = 3,
+    ) -> dict:
+        """DELETE /predictions/cleanup/{draw_day}/{draw_date}?min_matches=N.
+
+        Löscht alle Predictions mit `matches < min_matches`.
+        """
+        return self._request(
+            "DELETE", f"/predictions/cleanup/{draw_day}/{draw_date}",
+            params={"min_matches": int(min_matches)},
+        ).json()
+
+    def get_latest_prizes(self, draw_day: str) -> list[dict]:
+        """GET /prizes/latest/{draw_day} — letzte Gewinnquoten."""
+        try:
+            data = self._request("GET", f"/prizes/latest/{draw_day}").json()
+            if isinstance(data, list):
+                return data
+            return data.get("prizes") or []
+        except Exception:
+            return []
+
+    def get_jackpot(self, draw_day: str) -> dict | None:
+        """GET /jackpot/{draw_day} — Aktueller Jackpot (Klasse 1)."""
+        try:
+            data = self._request("GET", f"/jackpot/{draw_day}").json()
+            return data.get("jackpot")
+        except Exception:
+            return None
+
+    def get_purchased_dates(self, draw_day: str) -> list[str]:
+        """GET /predictions/purchased/dates/{draw_day} — Daten gekaufter Tipps."""
+        try:
+            data = self._request(
+                "GET", f"/predictions/purchased/dates/{draw_day}",
+            ).json()
+            if isinstance(data, list):
+                return data
+            return data.get("dates") or []
+        except Exception:
+            return []
+
+    def get_purchased_predictions(
+        self, draw_day: str, draw_date: str,
+    ) -> list[dict]:
+        """GET /predictions/purchased/{draw_day}/{draw_date} — gekaufte Tipps."""
+        try:
+            data = self._request(
+                "GET", f"/predictions/purchased/{draw_day}/{draw_date}",
+            ).json()
+            if isinstance(data, list):
+                return data
+            return data.get("predictions") or []
+        except Exception:
+            return []
+
+    def get_activity_log(self, limit: int = 30) -> list[dict]:
+        """GET /activity-log — letzte data_fetch_log Einträge."""
+        try:
+            data = self._request(
+                "GET", "/activity-log", params={"limit": int(limit)},
+            ).json()
+            if isinstance(data, list):
+                return data
+            return data.get("entries") or []
+        except Exception:
+            return []
+
+    def generate_batch(
+        self,
+        strategy: str,
+        draw_day: str,
+        count: int,
+        custom_weights: dict | None = None,
+        year_from: int | None = None,
+        year_to: int | None = None,
+    ) -> dict:
+        """POST /generate/batch — startet Server-side-Generation.
+
+        Antwort enthält `task_id` für asynchrone Generation. Der Caller
+        soll dann via `get_task(task_id)` den Status pollen.
+        """
+        body: dict = {
+            "strategy": strategy,
+            "draw_day": draw_day,
+            "count": int(count),
+        }
+        if custom_weights:
+            body["custom_weights"] = custom_weights
+        if year_from is not None:
+            body["year_from"] = int(year_from)
+        if year_to is not None:
+            body["year_to"] = int(year_to)
+        return self._request("POST", "/generate/batch", json=body).json()
+
     def test_connection(self) -> tuple[bool, str]:
         """Verbindung zum Server testen."""
         try:
@@ -266,6 +680,18 @@ class APIClient(AuthMixin, SettingsMixin, DrawsMixin, GenerationMixin, MlTrainin
     def db_tables(self) -> list[dict]:
         """Alle Tabellen mit Spalten und Zeilenanzahl."""
         return self._request("GET", "/db/tables").json()
+
+    def db_integrity(self) -> dict:
+        """DB-Integritätsbericht (Lücken-Erkennung pro Ziehtag)."""
+        return self._request("GET", "/db/integrity").json()
+
+    def list_db_backups(self) -> list[dict]:
+        """Liste der vorhandenen DB-Backups (Datei, Größe, Datum)."""
+        return self._request("GET", "/admin/db/backups").json()
+
+    def create_db_backup(self) -> dict:
+        """DB-Backup jetzt erstellen (manueller Trigger)."""
+        return self._request("POST", "/admin/db/backup-now").json()
 
     def db_table_rows(
         self, table_name: str, page: int = 1, page_size: int = 100,
@@ -325,6 +751,30 @@ class APIClient(AuthMixin, SettingsMixin, DrawsMixin, GenerationMixin, MlTrainin
 
     def request_ai_oversight(self) -> dict:
         return self._request("POST", "/monitor/ai-oversight", timeout=120).json()
+
+    # ── L4.1: Worker-Endpoints (entspricht L2.3 Backend) ──
+
+    def get_workers_config(self) -> dict:
+        """Aktuelle Worker-Count-Konfig (env/db/default)."""
+        return self._request("GET", "/workers/config").json()
+
+    def put_workers_config(self, worker_count: int) -> dict:
+        """Worker-Count in DB setzen. Restart erforderlich für Wirkung."""
+        return self._request(
+            "PUT", "/workers/config",
+            json={"worker_count": int(worker_count)},
+        ).json()
+
+    def get_workers_status(self, limit: int = 50, job_name: str | None = None) -> dict:
+        """Live: geplante Jobs + 7d-Statistik pro Job + recent_runs."""
+        params: dict = {"limit": int(limit)}
+        if job_name:
+            params["job_name"] = job_name
+        return self._request("GET", "/workers/status", params=params).json()
+
+    def get_health_detailed(self) -> dict:
+        """Erweiterter Health: Models/Predictions/Crawl/Scheduler/7d-Job-Stats."""
+        return self._request("GET", "/health/detailed", timeout=30).json()
 
     # ── Backtest ──
 
@@ -402,7 +852,7 @@ class APIClient(AuthMixin, SettingsMixin, DrawsMixin, GenerationMixin, MlTrainin
         return self._request("GET", f"/prizes/latest/{draw_day}").json()
 
     def get_live_jackpot(self) -> dict:
-        """Live-Jackpot-Betraege vom Server (aus Settings-Tabelle)."""
+        """Live-Jackpot-Beträge vom Server (aus Settings-Tabelle)."""
         return self._request("GET", "/jackpot/live").json()
 
     def scrape_prizes(self) -> dict:

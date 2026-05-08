@@ -78,7 +78,7 @@ class Part3Mixin3:
             return
 
         # Flag MUSS vor Thread-Start gesetzt sein, damit Toggle-Signale
-        # waehrend des Ladens ignoriert werden (Race-Condition vermeiden)
+        # während des Ladens ignoriert werden (Race-Condition vermeiden)
         self._audit_toggles_loading = True
 
         def worker():

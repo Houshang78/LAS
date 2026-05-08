@@ -202,7 +202,7 @@ class Part3Mixin:
     def _update_chat_ui(self, messages: list[dict]) -> bool:
         """Chat-Nachrichten im UI anzeigen (inkrementell)."""
         if not messages:
-            # Nur leeren State zeigen wenn noetig
+            # Nur leeren State zeigen wenn nötig
             if not self._chat_box.get_first_child():
                 empty = Gtk.Label(label=_("Keine Nachrichten"))
                 empty.add_css_class("dim-label")
@@ -261,7 +261,7 @@ class Part3Mixin:
 
             self._chat_box.append(msg_box)
 
-        # Hoehe explizit: ~60px pro Nachricht, max 600px
+        # Höhe explizit: ~60px pro Nachricht, max 600px
         row_h = 60
         h = min(len(messages) * row_h, 600)
         self._chat_scroll.set_min_content_height(max(h, 80))

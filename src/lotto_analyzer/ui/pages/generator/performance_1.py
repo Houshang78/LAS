@@ -58,7 +58,7 @@ class PerformanceMixin1:
             description=_("Wie gut treffen die einzelnen Strategien?"),
         )
         perf_group.set_header_suffix(
-            HelpButton(_("Historische Trefferquote pro Strategie ueber alle vergangenen Vorhersagen."))
+            HelpButton(_("Historische Trefferquote pro Strategie über alle vergangenen Vorhersagen."))
         )
         self._content.append(perf_group)
 
@@ -253,11 +253,9 @@ class PerformanceMixin1:
         """Woche-zu-Woche Performance-Trend laden."""
         def worker():
             try:
-                if self.app_mode == "client" and self.api_client:
-                    perf_data = self.api_client.strategy_performance(draw_day)
-                    perf_list = perf_data.get("performance", [])
-                elif self.db:
-                    perf_list = self.db.get_strategy_performance(draw_day)
+                # D2: API-only — kein self.db-Fallback mehr.
+                if self.api_client:
+                    perf_list = self.api_client.get_strategy_performance(draw_day)
                 else:
                     perf_list = []
                 GLib.idle_add(self._update_trend_ui, perf_list)
@@ -391,12 +389,13 @@ class PerformanceMixin1:
             threading.Thread(target=worker, daemon=True).start()
             return
 
-        if not self.db:
-            self._status_label.set_label(_("Keine Datenbank verfügbar"))
+        # D2: API-only.
+        if not self.api_client:
+            self._status_label.set_label(_("Server nicht verbunden"))
             return
 
         draw_day = self._get_draw_day()
-        perf_data = self.db.get_strategy_performance(draw_day.value)
+        perf_data = self.api_client.get_strategy_performance(draw_day.value)
         self._show_performance_data(perf_data)
 
     def _show_performance_data(self, perf_data: list[dict]) -> None:
@@ -490,10 +489,9 @@ class PerformanceMixin1:
         def worker():
             try:
                 # Performance-Daten laden (im Worker-Thread, nicht UI-Thread)
-                if self.api_client and not self.db:
-                    perf_data = self.api_client.strategy_performance(draw_day.value)
-                elif self.db:
-                    perf_data = self.db.get_strategy_performance(draw_day.value)
+                # D2: API-only — kein self.db-Fallback mehr.
+                if self.api_client:
+                    perf_data = self.api_client.get_strategy_performance(draw_day.value)
                 else:
                     perf_data = []
 

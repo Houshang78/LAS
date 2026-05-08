@@ -223,7 +223,7 @@ class Part2Mixin:
             self._status_label.set_label(_("Keine loesbaren Datensaetze ausgewählt."))
             return
 
-        self._status_label.set_label(f"{_('Loesche')} {len(rowids)} {_('Datensaetze')}...")
+        self._status_label.set_label(f"{_('Lösche')} {len(rowids)} {_('Datensaetze')}...")
 
         def worker():
             errors = []
@@ -300,7 +300,7 @@ class Part2Mixin:
     # ── Undo ──
 
     def _on_undo(self, btn) -> None:
-        """Letzte Loeschung rückgängig machen (re-insert)."""
+        """Letzte Löschung rückgängig machen (re-insert)."""
         if not self._undo_stack:
             return
         entry = self._undo_stack.pop()

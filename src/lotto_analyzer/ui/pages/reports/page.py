@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-import sqlite3
 import threading
 import json
 import time

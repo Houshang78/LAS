@@ -1,4 +1,4 @@
-"""LottoAnalyzer – GTK4 App mit AI-Analyse für deutsches Lotto 6aus49."""
+"""lotto-analyzer System – GTK4 App mit AI-Analyse für deutsches Lotto 6aus49."""
 
 __version__ = "1.0.0"
-__app_name__ = "LottoAnalyzer"
+__app_name__ = "lotto-analyzer System"

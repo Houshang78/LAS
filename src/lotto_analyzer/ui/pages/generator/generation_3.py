@@ -2,7 +2,6 @@
 
 import csv
 import io
-import sqlite3
 from pathlib import Path
 import threading
 from datetime import date, datetime
@@ -94,7 +93,7 @@ class GenerationMixin3:
         threading.Thread(target=worker, daemon=True).start()
 
     def _apply_server_ui_settings(self, data: dict) -> bool:
-        """Server-Settings in die UI uebernehmen (Main-Thread)."""
+        """Server-Settings in die UI übernehmen (Main-Thread)."""
         self._restoring_config = True
         try:
             if "tip_count" in data:
@@ -325,90 +324,22 @@ class GenerationMixin3:
             threading.Thread(target=worker, daemon=True).start()
             return
 
-        def worker():
-            try:
-                generator = self._init_generator()
-                if not generator:
-                    GLib.idle_add(self._on_generate_done, [], "Keine Datenbank verfügbar")
-                    return
-
-                # Auto-Training: ML/Ensemble braucht trainierte Modelle
-                ml_strategies = {Strategy.ML, Strategy.ENSEMBLE}
-                needs_ml = bool(ml_strategies & set(selected_strategies))
-                if needs_ml and generator.needs_ml_training(draw_day):
-                    GLib.idle_add(
-                        self._status_label.set_label,
-                        "ML-Modelle werden trainiert (1-2 Min)...",
-                    )
-                    self._init_ml_components()
-                    if self._model_trainer:
-                        self._model_trainer.train_day(draw_day)
-                        GLib.idle_add(self._refresh_ml_status)
-
-                # Custom-Gewichte ans Generator-Objekt
-                if custom_weights:
-                    generator._adaptive_weights = custom_weights
-
-                results: list[GenerationResult] = []
-                strategies: list[str] = []
-
-                if multi_strategy:
-                    multi = generator.generate_multi_strategy(
-                        draw_day,
-                        count_per_strategy=count,
-                        strategies=selected_strategies,
-                    )
-                    for strat_name, strat_results in multi.items():
-                        for r in strat_results:
-                            results.append(r)
-                            strategies.append(strat_name)
-                else:
-                    strategy = selected_strategies[0]
-                    batch = generator.generate_batch(strategy, draw_day, count)
-                    for r in batch:
-                        results.append(r)
-                        strategies.append(r.strategy)
-
-                # In DB speichern
-                draw_date = self._current_draw_date
-                if not draw_date:
-                    GLib.idle_add(self._update_target_date)
-                    draw_date = self._current_draw_date
-                if not draw_date:
-                    logger.warning("Kein Zieldatum verfügbar, ueberspringe DB-Insert")
-                    GLib.idle_add(self._on_generate_done, results, None, strategies)
-                    return
-                for i, result in enumerate(results):
-                    pred = PredictionRecord(
-                        draw_date=draw_date,
-                        draw_day=draw_day.value,
-                        strategy=result.strategy,
-                        predicted_numbers=sorted(result.numbers),
-                        ml_confidence=result.confidence,
-                        ai_reasoning=result.reasoning,
-                        position=i + 1,
-                    )
-                    self.db.insert_prediction(pred)
-
-                # Combo-Vorhersagen mitgenerieren bei ML/Ensemble
-                if needs_ml and self._combo_evaluator:
-                    try:
-                        self._combo_evaluator.generate_all_combos(
-                            draw_day, draw_date,
-                        )
-                        GLib.idle_add(self._refresh_combo_status)
-                    except Exception as e:
-                        logger.warning(f"Combo-Generierung: {e}")
-
-                GLib.idle_add(self._on_generate_done, results, None, strategies)
-            except (sqlite3.Error, OSError) as e:
-                logger.error(f"Generierung fehlgeschlagen: {e}")
-                GLib.idle_add(self._on_generate_done, [], str(e))
-            except Exception as e:
-                logger.exception(f"Unerwarteter Fehler bei Generierung: {e}")
-                GLib.idle_add(self._on_generate_done, [], str(e))
-
-        threading.Thread(target=worker, daemon=True).start()
+        # B.3: Local-Generation-Pfad entfernt.
+        #
+        # Vorher führte dieser Worker `generator.generate_*` mit lokalem ML
+        # aus + schrieb Predictions direkt in die SQLite-DB. Das war die
+        # größte Architektur-Verletzung im LAS-Desktop:
+        # - lokaler ML-Stack (Trainer + Generator + Combo-Evaluator)
+        # - lokaler Prediction-Insert
+        # - sqlite3.Error-Handling
+        #
+        # Server hat alles davon (`POST /generate/batch` + Auto-Insert).
+        # Wenn wir hier ankommen ohne `api_client`, ist der Operator-State
+        # falsch — laut Toast statt silent fail.
+        if not self.api_client:
+            logger.warning("Generierung ohne api_client — abgebrochen.")
+            self._on_generate_done([], _("Server nicht verbunden"))
+            return
 
     def _on_generate_done(
         self, results: list[GenerationResult],
@@ -458,7 +389,7 @@ class GenerationMixin3:
 
         self._generate_task_id = task_id
 
-        # WS-Listener fuer instant Updates (Polling bleibt als Fallback)
+        # WS-Listener für instant Updates (Polling bleibt als Fallback)
         try:
             from lotto_analyzer.ui.widgets.ws_manager import ui_ws_manager
             ui_ws_manager.on("task_update", self._on_ws_generate_task)
@@ -600,21 +531,13 @@ class GenerationMixin3:
             draw_date = self._current_draw_date
 
         def worker():
+            # B.3: API-only — Predictions des Datums vom Server holen.
             try:
                 predictions: list[dict] = []
 
-                if self.app_mode == "client" and self.api_client:
-                    resp = self.api_client.get_predictions(
-                        draw_day=draw_day.value,
-                        draw_date=draw_date,
-                        limit=200,
-                    )
-                    predictions = resp.get("predictions", [])
-                elif self.db:
-                    predictions = self.db.get_predictions_paginated(
-                        draw_day=draw_day.value,
-                        draw_date=draw_date,
-                        limit=200,
+                if self.api_client:
+                    predictions = self.api_client.get_predictions_for_date(
+                        draw_day.value, draw_date,
                     )
 
                 if not predictions:

@@ -60,7 +60,7 @@ class Part1Mixin:
         threading.Thread(target=worker, daemon=True).start()
 
     def _apply_server_settings(self, results: dict) -> bool:
-        """Server-Einstellungen in die UI-Felder uebernehmen."""
+        """Server-Einstellungen in die UI-Felder übernehmen."""
         # AI
         ai = results.get("ai", {})
         if ai:

@@ -163,7 +163,7 @@ class Part3Mixin:
 
         ssh_switch = Adw.SwitchRow(
             title=_("SSH verwenden"),
-            subtitle=_("Verbindung ueber SSH-Tunnel aufbauen"),
+            subtitle=_("Verbindung über SSH-Tunnel aufbauen"),
         )
         ssh_switch.set_active(profile.use_ssh)
         ssh_group.add(ssh_switch)

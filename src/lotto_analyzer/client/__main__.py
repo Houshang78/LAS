@@ -1,6 +1,12 @@
-"""lotto-analyzer System — GTK4 Desktop Client.
+"""LAS Desktop-Client Entry-Point.
 
-Entry point: python -m lotto_analyzer [--server HOST:PORT] [--debug]
+Wird vom `/usr/bin/las` Wrapper aufgerufen (`python3 -m lotto_analyzer.client`).
+Eigener Entry hier statt im Namespace-Root, damit es nicht mit dem
+LASS-Server-Paket kollidiert (das nimmt `lotto_analyzer/__main__.py`).
+
+Logik gespiegelt aus `lotto_analyzer/__main__.py` im LAS-Repo — der
+bleibt für lokales `PYTHONPATH=src python -m lotto_analyzer` während
+der Entwicklung erhalten, wird aber NICHT vom .deb installiert.
 """
 
 import argparse
@@ -23,7 +29,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--debug", action="store_true", help="Debug-Modus",
     )
-
     return parser.parse_args()
 
 
@@ -54,7 +59,7 @@ def main():
     if not server_addr:
         server_addr = f"{cfg.server.host}:{cfg.server.port}"
 
-    logger.info("lotto-analyzer v1.0.0 startet, Server: %s", server_addr)
+    logger.info("lotto-analyzer (Desktop) startet, Server: %s", server_addr)
 
     from lotto_analyzer.ui.app import LottoAnalyzerApp
     app = LottoAnalyzerApp(server_address=server_addr)

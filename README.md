@@ -1,4 +1,4 @@
-# LAS — Lotto Analyzer System (GTK4 Desktop Client)
+# lotto-analyzer System (GTK4 Desktop Client)
 
 GTK4/Adwaita Desktop-App fuer **Lotto 6aus49** und **EuroJackpot**. Verbindet sich via REST-API mit dem LASS-Server.
 

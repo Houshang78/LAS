@@ -80,7 +80,7 @@ class Part2Mixin2:
             scroll = Gtk.ScrolledWindow()
             scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
             scroll.set_child(tips_box)
-            # Hoehe explizit: Adw.ActionRow ~56px, schrumpft bei wenig, max 600px
+            # Höhe explizit: Adw.ActionRow ~56px, schrumpft bei wenig, max 600px
             row_h = 56
             h = min(len(tips) * row_h, 600)
             scroll.set_min_content_height(max(h, 60))
@@ -345,7 +345,7 @@ class Part2Mixin2:
                         draw_h, draw_m = _draw_times.get(day_str, (20, 0))
                         days_ahead = (target_wd - today.weekday()) % 7
                         if days_ahead == 0:
-                            # Heute: vorbei wenn Ziehungszeit + 1h ueberschritten
+                            # Heute: vorbei wenn Ziehungszeit + 1h überschritten
                             if now.hour >= draw_h + 1:
                                 days_ahead = 7
                         next_date = today + timedelta(days=days_ahead)
@@ -385,43 +385,22 @@ class Part2Mixin2:
                 except Exception as e:
                     logger.warning(f"Nächste-Ziehung Berechnung fehlgeschlagen: {e}")
 
-                # Live-Jackpot-Betraege holen
+                # B.6: Live-Jackpot via API — kein KV-Setting-Read mehr.
                 live_jackpots: dict[str, dict] = {}
-                try:
-                    if self.api_client:
-                        live_jackpots = self.api_client.get_live_jackpot()
-                    elif self.app_db:
-                        for game in ("6aus49", "eurojackpot"):
-                            mio_str = self.app_db.get_setting(f"jackpot_{game}_next_mio", "0")
-                            mio = float(mio_str) if mio_str else 0.0
-                            if mio > 0:
-                                live_jackpots[game] = {
-                                    "next_mio": mio,
-                                    "next_date": self.app_db.get_setting(f"jackpot_{game}_next_date", ""),
-                                    "next_day": self.app_db.get_setting(f"jackpot_{game}_next_day", ""),
-                                }
-                except Exception as e:
-                    logger.warning(f"Live-Jackpot laden fehlgeschlagen: {e}")
 
                 # Gewinnquoten + Live-Jackpot pro Ziehungstag
                 try:
-                    _day_to_game = {
-                        "saturday": "6aus49", "wednesday": "6aus49",
-                        "tuesday": "eurojackpot", "friday": "eurojackpot",
-                    }
                     for jp_day in self._config.draw_days:
                         try:
                             prizes = []
+                            jp_info = {}
                             if self.api_client:
-                                resp = self.api_client.get_latest_prizes(jp_day)
-                                prizes = resp.get("prizes", [])
-                            elif self.db:
-                                prizes = self.db.get_latest_prizes(jp_day)
+                                prizes = self.api_client.get_latest_prizes(jp_day)
+                                # Pro Day einzelner /jackpot Call (Server cached intern).
+                                jp_info = self.api_client.get_jackpot(jp_day) or {}
 
-                            game_key = _day_to_game.get(jp_day, "")
-                            live = live_jackpots.get(game_key, {})
-                            next_jp = live.get("next_mio", 0)
-                            next_day = live.get("next_day", "")
+                            next_jp = jp_info.get("next_mio", 0) if isinstance(jp_info, dict) else 0
+                            next_day = jp_info.get("next_day", "") if isinstance(jp_info, dict) else ""
 
                             parts = []
                             if next_jp > 0 and next_day == jp_day:
@@ -438,13 +417,11 @@ class Part2Mixin2:
             except Exception as e:
                 logger.warning(f"Server-Status laden fehlgeschlagen: {e}")
 
-            # Aktivitätslog laden
+            # Aktivitätslog laden — B.6: API-only.
             activity_log = []
             try:
                 if self.api_client:
                     activity_log = self.api_client.get_activity_log(limit=10)
-                elif self.app_db:
-                    activity_log = self.app_db.get_data_fetch_log(limit=10)
             except Exception as e:
                 logger.warning(f"Aktivitätslog laden fehlgeschlagen: {e}")
 
@@ -453,13 +430,10 @@ class Part2Mixin2:
             try:
                 if self.api_client:
                     for day_str in self._config.draw_days:
-                        try:
-                            resp = self.api_client.strategy_performance(day_str)
-                            perf_data.extend(resp.get("performance", []))
-                        except Exception as e:
-                            logger.warning(f"Strategie-Performance laden fehlgeschlagen ({day_str}): {e}")
-                elif self.db:
-                    perf_data = self.db.get_strategy_performance()
+                        # D2: API-only — neue get_strategy_performance liefert
+                        # bereits Liste, kein dict-Zwischenwrap nötig.
+                        perf_data.extend(self.api_client.get_strategy_performance(day_str))
+                # D2: kein self.db-Fallback mehr — UI ist API-only.
             except Exception as e:
                 logger.warning(f"Strategie-Performance Abfrage fehlgeschlagen: {e}")
 

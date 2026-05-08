@@ -50,15 +50,15 @@ class BuildUIMixin:
     def _build_tls_section(self, content):
         tls_group = Adw.PreferencesGroup(
             title=_("TLS/Sicherheit"),
-            description=_("HTTPS-Verschluesselung"),
+            description=_("HTTPS-Verschlüsselung"),
         )
         tls_group.set_header_suffix(
-            HelpButton(_("HTTPS-Verschluesselung fuer die Verbindung zwischen GUI und Server."))
+            HelpButton(_("HTTPS-Verschlüsselung für die Verbindung zwischen GUI und Server."))
         )
         content.append(tls_group)
 
         self._tls_status = Adw.ActionRow(
-            title=_("TLS-Status"), subtitle=_("Wird geprueft..."),
+            title=_("TLS-Status"), subtitle=_("Wird geprüft..."),
         )
         tls_group.add(self._tls_status)
 
@@ -139,7 +139,7 @@ class BuildUIMixin:
             title=_("Benutzerverwaltung"), description=_("Server-Benutzerkonten"),
         )
         user_group.set_header_suffix(
-            HelpButton(_("Server-Konten erstellen/loeschen. Admin = voller Zugriff, User = Lesen + Generieren."))
+            HelpButton(_("Server-Konten erstellen/löschen. Admin = voller Zugriff, User = Lesen + Generieren."))
         )
         content.append(user_group)
 
@@ -160,7 +160,7 @@ class BuildUIMixin:
     def _build_apikey_section(self, content):
         api_group = Adw.PreferencesGroup(title=_("API-Key"))
         api_group.set_header_suffix(
-            HelpButton(_("Authentifizierungsschluessel fuer die Server-Verbindung."))
+            HelpButton(_("Authentifizierungsschlüssel für die Server-Verbindung."))
         )
         content.append(api_group)
 
@@ -168,18 +168,18 @@ class BuildUIMixin:
         self._api_key_display.add_prefix(Gtk.Image.new_from_icon_name("dialog-password-symbolic"))
         rotate_btn = Gtk.Button(label=_("Rotieren"))
         rotate_btn.set_valign(Gtk.Align.CENTER)
-        rotate_btn.set_tooltip_text(_("API-Key fuer den angemeldeten Benutzer neu generieren"))
+        rotate_btn.set_tooltip_text(_("API-Key für den angemeldeten Benutzer neu generieren"))
         rotate_btn.connect("clicked", self._on_rotate_api_key)
         self._api_key_display.add_suffix(rotate_btn)
         api_group.add(self._api_key_display)
 
     def _build_ssh_section(self, content):
         ssh_group = Adw.PreferencesGroup(
-            title=_("SSH-Schluessel"),
+            title=_("SSH-Schlüssel"),
             description=_("Registrierte SSH Public Keys"),
         )
         ssh_group.set_header_suffix(
-            HelpButton(_("SSH-Schluessel erlauben Login per Challenge-Response (RSA/Ed25519)."))
+            HelpButton(_("SSH-Schlüssel erlauben Login per Challenge-Response (RSA/Ed25519)."))
         )
         content.append(ssh_group)
 
@@ -200,7 +200,7 @@ class BuildUIMixin:
     def _build_cert_section(self, content):
         cert_group = Adw.PreferencesGroup(
             title=_("Client-Zertifikate"),
-            description=_("Zertifikate fuer zertifikatsbasierte Anmeldung"),
+            description=_("Zertifikate für zertifikatsbasierte Anmeldung"),
         )
         cert_group.set_header_suffix(
             HelpButton(_("Client-Zertifikate werden von der Server-CA ausgestellt."))
@@ -251,7 +251,7 @@ class BuildUIMixin:
         self._audit_select_all.connect("toggled", self._on_audit_select_all)
         audit_ctrl.append(self._audit_select_all)
 
-        self._audit_delete_btn = Gtk.Button(label=_("Markierte loeschen"))
+        self._audit_delete_btn = Gtk.Button(label=_("Markierte löschen"))
         self._audit_delete_btn.set_icon_name("user-trash-symbolic")
         self._audit_delete_btn.add_css_class("destructive-action")
         self._audit_delete_btn.set_sensitive(False)
@@ -279,7 +279,7 @@ class BuildUIMixin:
             title=_("systemd Service"), description="lotto-analyzer-server.service",
         )
         service_group.set_header_suffix(
-            HelpButton(_("LottoAnalyzer-Server als Systemdienst. Autostart = startet beim Booten."))
+            HelpButton(_("lotto-analyzer-Server als Systemdienst. Autostart = startet beim Booten."))
         )
         content.append(service_group)
 
@@ -312,12 +312,12 @@ class BuildUIMixin:
     def _build_scheduler_section(self, content):
         sched_group = Adw.PreferencesGroup(title=_("Auto-Crawl Scheduler"))
         sched_group.set_header_suffix(
-            HelpButton(_("Automatischer Crawl-Zeitplan: prueft nach jeder Ziehung auf neue Daten."))
+            HelpButton(_("Automatischer Crawl-Zeitplan: prüft nach jeder Ziehung auf neue Daten."))
         )
         content.append(sched_group)
 
         self._sched_status = Adw.ActionRow(
-            title=_("Scheduler"), subtitle=_("Aktiv – Naechster Crawl: —"),
+            title=_("Scheduler"), subtitle=_("Aktiv – Nächster Crawl: —"),
         )
         sched_group.add(self._sched_status)
 
@@ -337,7 +337,7 @@ class BuildUIMixin:
         db_group = Adw.PreferencesGroup(title=_("Datenbank"))
         content.append(db_group)
 
-        self._db_size = Adw.ActionRow(title=_("Groesse"), subtitle="—")
+        self._db_size = Adw.ActionRow(title=_("Größe"), subtitle="—")
         db_group.add(self._db_size)
         self._db_draws = Adw.ActionRow(title=_("Ziehungen"), subtitle="—")
         db_group.add(self._db_draws)

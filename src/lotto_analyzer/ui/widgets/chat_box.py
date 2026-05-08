@@ -306,7 +306,7 @@ class ChatBox(Gtk.Box):
             self._chat_box.remove(self._placeholder)
 
     def _update_scroll_height(self) -> None:
-        """Scroll-Hoehe an Inhalt anpassen."""
+        """Scroll-Höhe an Inhalt anpassen."""
         GLib.idle_add(self._sync_scroll_height)
 
     def _sync_scroll_height(self) -> bool:
@@ -365,7 +365,7 @@ class ChatBox(Gtk.Box):
         self.emit("message-submitted", text)
 
     def _on_mic_transcribed(self, _btn, text: str) -> None:
-        """Spracheingabe uebernehmen und senden."""
+        """Spracheingabe übernehmen und senden."""
         if text:
             self._entry.set_text(text)
             self._on_submit(None)

@@ -49,13 +49,12 @@ class Part3Mixin:
         users_data = []
 
         def load_users():
+            # D3: API-only — SSH-Key-Add-Dialog Benutzerliste.
             try:
-                if self.api_client and not self.db:
+                if self.api_client:
                     users_data.extend(self.api_client.list_users())
                 else:
-                    from lotto_analyzer.server.user_db import UserDatabase
-                    udb = UserDatabase(self.config_manager.data_dir / "users.db")
-                    users_data.extend(udb.list_users())
+                    logger.warning("load_users (sshkey): kein api_client")
             except Exception as e:
                 logger.warning(f"Benutzerliste laden fehlgeschlagen: {e}")
             GLib.idle_add(_populate_users)
@@ -94,20 +93,14 @@ class Part3Mixin:
                 return
 
             def worker():
+                # D3: API-only — Server validiert + parst den SSH-Key
+                # serverseitig (parse_public_key + Fingerprint im Backend).
                 try:
-                    if self.api_client and not self.db:
-                        self.api_client.add_user_key(user["id"], key_data, desc)
-                    else:
-                        from lotto_analyzer.server.key_auth import (
-                            parse_public_key, compute_key_fingerprint, public_key_to_pem,
-                        )
-                        from lotto_analyzer.server.user_db import UserDatabase
-                        udb = UserDatabase(self.config_manager.data_dir / "users.db")
-                        key_type, pub_key = parse_public_key(key_data)
-                        fp = compute_key_fingerprint(pub_key)
-                        pem = public_key_to_pem(pub_key)
-                        udb.add_public_key(user["id"], key_type, pem, fp, desc)
-                    GLib.idle_add(status_label.set_text, "SSH-Key registriert")
+                    if not self.api_client:
+                        GLib.idle_add(status_label.set_text, _("Server nicht verbunden"))
+                        return
+                    self.api_client.add_user_key(user["id"], key_data, desc)
+                    GLib.idle_add(status_label.set_text, _("SSH-Key registriert"))
                     GLib.idle_add(dialog.close)
                     GLib.idle_add(self._load_status)
                 except Exception as e:
@@ -128,13 +121,15 @@ class Part3Mixin:
         orig_label = button.get_label()
 
         def worker():
+            # D3: API-only.
             try:
-                if self.api_client and not self.db:
-                    self.api_client.remove_user_key(fingerprint)
-                else:
-                    from lotto_analyzer.server.user_db import UserDatabase
-                    udb = UserDatabase(self.config_manager.data_dir / "users.db")
-                    udb.remove_public_key_by_fingerprint(fingerprint)
+                if not self.api_client:
+                    GLib.idle_add(
+                        self._show_error_restore_btn, button, orig_label,
+                        _("Server nicht verbunden"),
+                    )
+                    return
+                self.api_client.remove_user_key(fingerprint)
                 GLib.idle_add(self._load_status)
             except Exception as e:
                 GLib.idle_add(self._show_error_restore_btn, button, orig_label, str(e))
@@ -166,12 +161,11 @@ class Part3Mixin:
 
         def load_users():
             try:
-                if self.api_client and not self.db:
+                # D3: API-only — Cert-Issue-Dialog Benutzerliste.
+                if self.api_client:
                     users_data.extend(self.api_client.list_users())
                 else:
-                    from lotto_analyzer.server.user_db import UserDatabase
-                    udb = UserDatabase(self.config_manager.data_dir / "users.db")
-                    users_data.extend(udb.list_users())
+                    logger.warning("load_users (cert): kein api_client")
             except Exception as e:
                 logger.warning(f"Benutzerliste laden fehlgeschlagen: {e}")
             GLib.idle_add(_populate_users)
@@ -206,37 +200,18 @@ class Part3Mixin:
             days = int(days_entry.get_value())
 
             def worker():
+                # D3: API-only — Server stellt Cert aus + persistiert.
+                # Client-seitige CA-Schlüssel-Operationen verboten
+                # (Sicherheitsrisiko + falscher Trust-Anchor).
                 try:
-                    if self.api_client and not self.db:
-                        result = self.api_client.issue_certificate(user["id"], days)
-                        GLib.idle_add(
-                            status_label.set_text,
-                            f"Zertifikat ausgestellt!\nSerial: {result.get('serial', '?')[:20]}...",
-                        )
-                    else:
-                        from datetime import datetime, timedelta
-                        from lotto_analyzer.server.key_auth import issue_client_cert
-                        from lotto_analyzer.server.user_db import UserDatabase
-                        ca_dir = self.config_manager._config_dir / "tls" / "ca"
-                        ca_cert = ca_dir / "ca.crt"
-                        ca_key = ca_dir / "ca.key"
-                        if not ca_cert.exists():
-                            GLib.idle_add(status_label.set_text, "Keine CA vorhanden. Zuerst: cert init-ca")
-                            return
-                        udb = UserDatabase(self.config_manager.data_dir / "users.db")
-                        cert_pem, key_pem, serial, fp = issue_client_cert(
-                            ca_cert, ca_key, user["username"], days,
-                        )
-                        now = datetime.now()
-                        udb.add_client_certificate(
-                            user["id"], serial, fp, user["username"],
-                            now.isoformat(), (now + timedelta(days=days)).isoformat(),
-                            cert_pem,
-                        )
-                        GLib.idle_add(
-                            status_label.set_text,
-                            f"Zertifikat ausgestellt!\nSerial: {serial[:20]}...",
-                        )
+                    if not self.api_client:
+                        GLib.idle_add(status_label.set_text, _("Server nicht verbunden"))
+                        return
+                    result = self.api_client.issue_certificate(user["id"], days)
+                    GLib.idle_add(
+                        status_label.set_text,
+                        f"Zertifikat ausgestellt!\nSerial: {result.get('serial', '?')[:20]}...",
+                    )
                     GLib.idle_add(self._load_status)
                 except Exception as e:
                     GLib.idle_add(status_label.set_text, f"Fehler: {e}")
@@ -270,13 +245,15 @@ class Part3Mixin:
             orig_label = button.get_label()
 
             def worker():
+                # D3: API-only.
                 try:
-                    if self.api_client and not self.db:
-                        self.api_client.revoke_certificate(serial)
-                    else:
-                        from lotto_analyzer.server.user_db import UserDatabase
-                        udb = UserDatabase(self.config_manager.data_dir / "users.db")
-                        udb.revoke_certificate(serial)
+                    if not self.api_client:
+                        GLib.idle_add(
+                            self._show_error_restore_btn, button, orig_label,
+                            _("Server nicht verbunden"),
+                        )
+                        return
+                    self.api_client.revoke_certificate(serial)
                     GLib.idle_add(self._load_status)
                 except Exception as e:
                     GLib.idle_add(self._show_error_restore_btn, button, orig_label, str(e))

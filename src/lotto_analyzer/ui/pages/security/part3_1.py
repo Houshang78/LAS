@@ -66,7 +66,7 @@ class Part3Mixin1:
 
         cleanup_row = Adw.ActionRow(title="")
         cleanup_btn = Gtk.Button(label=_("Alte Logs bereinigen"))
-        cleanup_btn.set_tooltip_text(_("Audit-Logs aelter als 90 Tage löschen"))
+        cleanup_btn.set_tooltip_text(_("Audit-Logs älter als 90 Tage löschen"))
         cleanup_btn.add_css_class("destructive-action")
         cleanup_btn.set_valign(Gtk.Align.CENTER)
         cleanup_btn.connect("clicked", self._on_cleanup_logs)

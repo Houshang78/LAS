@@ -138,7 +138,7 @@ class ProfileManager:
 
         server = self.config_manager.config.server
         if server.host == "localhost" and not server.api_key:
-            return  # Default-Config, keine Migration noetig
+            return  # Default-Config, keine Migration nötig
 
         profile = ConnectionProfile(
             name="Standard",

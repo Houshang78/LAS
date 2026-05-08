@@ -201,7 +201,7 @@ class DBManagerPage(Part1Mixin, Part2Mixin, Part3Mixin, Part4Mixin, BasePage):
         toolbar.append(self._delete_btn)
 
         self._undo_btn = Gtk.Button(icon_name="edit-undo-symbolic")
-        self._undo_btn.set_tooltip_text(_("Letzte Loeschung rückgängig machen"))
+        self._undo_btn.set_tooltip_text(_("Letzte Löschung rückgängig machen"))
         self._undo_btn.connect("clicked", self._on_undo)
         self._undo_btn.set_sensitive(False)
         self.register_readonly_button(self._undo_btn)

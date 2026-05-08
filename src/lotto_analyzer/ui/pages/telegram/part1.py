@@ -407,7 +407,7 @@ class TelegramPage(Part2Mixin, Part3Mixin, BasePage):
         # Slow fallback polling (WS pushes instant)
         self._poll_id = GLib.timeout_add_seconds(60, self._poll_messages)
 
-        # WS-Listener fuer instant Updates
+        # WS-Listener für instant Updates
         try:
             from lotto_analyzer.ui.widgets.ws_manager import ui_ws_manager
             ui_ws_manager.on("telegram_message", self._on_ws_telegram_event)
@@ -450,7 +450,7 @@ class TelegramPage(Part2Mixin, Part3Mixin, BasePage):
                     msg = _("Verbunden") if result.get("running") else _("Fehler")
                 else:
                     self._save_config_local()
-                    msg = _("Config gespeichert (Neustart noetig für Bot-Start)")
+                    msg = _("Config gespeichert (Neustart nötig für Bot-Start)")
                 GLib.idle_add(self._on_connect_done, msg, None)
             except Exception as e:
                 GLib.idle_add(self._on_connect_done, "", str(e))

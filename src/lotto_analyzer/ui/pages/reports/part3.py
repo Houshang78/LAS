@@ -45,11 +45,6 @@ class Part3Mixin:
                     data = self.api_client.get_report_hits(report_id, 0)
                     accuracy = data.get("accuracy", {})
                     self._cache_set(self._accuracy_cache, report_id, accuracy)
-                elif self.db:
-                    accuracy = self.db.get_prediction_accuracy_stats(
-                        draw_day, draw_date,
-                    )
-                    self._cache_set(self._accuracy_cache, report_id, accuracy)
                 else:
                     accuracy = {}
                 GLib.idle_add(self._populate_accuracy, accuracy)
@@ -282,7 +277,7 @@ class Part3Mixin:
         # Metadaten
         lines.append("---")
         lines.append("")
-        lines.append(f"*Exportiert aus LottoAnalyzer — Ziehungstag: {day_str}, "
+        lines.append(f"*Exportiert aus lotto-analyzer — Ziehungstag: {day_str}, "
                       f"Spiel: {report.get('draw_day', '')}*")
 
         return "\n".join(lines)
@@ -350,14 +345,17 @@ class Part3Mixin:
 
         import requests
 
-        # Detail-Hits und Accuracy laden
-        draw_day = report.get("draw_day", "")
-        draw_date = report.get("draw_date", "")
+        # Detail-Hits und Accuracy via API (Feedback-Loop für ML-Tuning)
+        report_id = report.get("report_id", "")
         hits = []
         accuracy = {}
-        if self.db and draw_day and draw_date:
-            hits = self.db.get_predictions_with_min_matches(draw_day, draw_date, 3)
-            accuracy = self.db.get_prediction_accuracy_stats(draw_day, draw_date)
+        if self.api_client and report_id:
+            try:
+                data = self.api_client.get_report_hits(report_id, 3)
+                hits = data.get("hits", [])
+                accuracy = data.get("accuracy", {})
+            except Exception as e:
+                logger.warning(f"Report-Hits via API fehlgeschlagen: {e}")
 
         text = self._format_report_text(report, hits=hits, accuracy=accuracy)
         url = f"https://api.telegram.org/bot{tg_cfg.bot_token}/sendMessage"

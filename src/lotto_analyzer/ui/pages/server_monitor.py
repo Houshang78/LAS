@@ -262,14 +262,24 @@ class ServerMonitorPage(BasePage):
         )
 
     def _try_ws_subscribe(self) -> None:
-        """Subscribe to WS events for instant updates."""
+        """Subscribe to WS events for instant updates.
+
+        D4.1: Bei Fehler nicht silent — sichtbar im Log dass auf
+        Polling-Fallback zurückgefallen wurde, plus once-only Toast.
+        """
         try:
             from lotto_analyzer.ui.widgets.ws_manager import ui_ws_manager
             ui_ws_manager.on("scheduler_status", self._on_ws_event)
             ui_ws_manager.on("task_update", self._on_ws_event)
             ui_ws_manager.on("draw_update", self._on_ws_event)
-        except Exception:
-            pass  # WS not available, polling is fallback
+        except Exception as e:
+            logger.warning(
+                f"WS-Subscribe fehlgeschlagen: {e} — Polling-Fallback aktiv",
+            )
+            self.show_toast(_(
+                "Live-Updates aus — verwende Polling. "
+                "(websocket-client installieren für Instant-Refresh)",
+            ))
 
     def _on_ws_event(self, data: dict) -> bool:
         """Handle WS push event — trigger immediate refresh."""
@@ -286,14 +296,22 @@ class ServerMonitorPage(BasePage):
             ui_ws_manager.off("scheduler_status", self._on_ws_event)
             ui_ws_manager.off("task_update", self._on_ws_event)
             ui_ws_manager.off("draw_update", self._on_ws_event)
-        except Exception:
-            pass
+        except Exception as e:
+            # Cleanup-Fehler — nicht user-facing, aber loggen statt
+            # silent verschlucken (vorher: pass).
+            logger.debug(f"WS-Listener-Cleanup: {e}")
 
     def _poll_tick(self) -> bool:
-        """Timer-Callback: Daten holen."""
+        """Timer-Callback: Daten holen.
+
+        D4.3: Wenn die letzten N API-Calls failed haben, springen wir
+        diesen Tick — _poll_all selbst trackt success/failure.
+        """
         if not self.api_client:
             self._poll_timer_id = None
             return False
+        if self.poll_should_skip():
+            return True  # bleibt im Polling, aber überspringt diesen Tick
         self._poll_all()
         return True
 
@@ -308,54 +326,44 @@ class ServerMonitorPage(BasePage):
             return
 
         def worker():
+            # D4.3: Track ob mind. ein API-Call connection-OK war.
+            # Wenn alle 4 mit ConnectionError/Timeout failen → poll_record_failure
+            # → exponential backoff. Bei mind. einem Erfolg → reset.
             data = {}
-            try:
-                data["scheduler"] = self.api_client.get_scheduler_status()
-                if not isinstance(data["scheduler"], dict):
-                    logger.warning("Scheduler-Status: unerwarteter Typ %s", type(data["scheduler"]))
-                    data["scheduler"] = None
-            except (ConnectionError, TimeoutError, OSError) as e:
-                logger.warning(f"Scheduler-Status Fehler: {e}")
-                data["scheduler"] = None
-            except Exception as e:
-                logger.exception(f"Unerwarteter Fehler bei Scheduler-Status: {e}")
-                data["scheduler"] = None
+            connect_failures = 0
+            other_success = 0
 
-            try:
-                data["feed"] = self.api_client.get_live_feed(limit=self.FEED_LIMIT)
-                if not isinstance(data["feed"], list):
-                    logger.warning("Live-Feed: unerwarteter Typ %s", type(data["feed"]))
-                    data["feed"] = []
-            except (ConnectionError, TimeoutError, OSError) as e:
-                logger.warning(f"Live-Feed Fehler: {e}")
-                data["feed"] = []
-            except Exception as e:
-                logger.exception(f"Unerwarteter Fehler bei Live-Feed: {e}")
-                data["feed"] = []
+            def _try(label, fn):
+                nonlocal connect_failures, other_success
+                try:
+                    val = fn()
+                    other_success += 1
+                    return val
+                except (ConnectionError, TimeoutError, OSError) as e:
+                    connect_failures += 1
+                    logger.warning(f"{label} Connection-Fehler: {e}")
+                except Exception as e:
+                    other_success += 1  # API erreichbar, nur Datenfehler
+                    logger.exception(f"Unerwarteter Fehler bei {label}: {e}")
+                return None
 
-            try:
-                data["cycle_config"] = self.api_client.get_cycle_config()
-                if not isinstance(data["cycle_config"], dict):
-                    logger.warning("Cycle-Config: unerwarteter Typ %s", type(data["cycle_config"]))
-                    data["cycle_config"] = None
-            except (ConnectionError, TimeoutError, OSError) as e:
-                logger.warning(f"Cycle-Config Fehler: {e}")
-                data["cycle_config"] = None
-            except Exception as e:
-                logger.exception(f"Unerwarteter Fehler bei Cycle-Config: {e}")
-                data["cycle_config"] = None
+            sched = _try("Scheduler-Status", self.api_client.get_scheduler_status)
+            data["scheduler"] = sched if isinstance(sched, dict) else None
 
-            try:
-                data["ml"] = self.api_client.ml_status()
-                if not isinstance(data["ml"], dict):
-                    logger.warning("ML-Status: unerwarteter Typ %s", type(data["ml"]))
-                    data["ml"] = None
-            except (ConnectionError, TimeoutError, OSError) as e:
-                logger.warning(f"ML-Status Fehler: {e}")
-                data["ml"] = None
-            except Exception as e:
-                logger.exception(f"Unerwarteter Fehler bei ML-Status: {e}")
-                data["ml"] = None
+            feed = _try("Live-Feed", lambda: self.api_client.get_live_feed(limit=self.FEED_LIMIT))
+            data["feed"] = feed if isinstance(feed, list) else []
+
+            cycle = _try("Cycle-Config", self.api_client.get_cycle_config)
+            data["cycle_config"] = cycle if isinstance(cycle, dict) else None
+
+            ml = _try("ML-Status", self.api_client.ml_status)
+            data["ml"] = ml if isinstance(ml, dict) else None
+
+            # Connection-Health-Tracking (Backoff)
+            if connect_failures and other_success == 0:
+                self.poll_record_failure(ConnectionError(f"{connect_failures}/4 calls failed"))
+            else:
+                self.poll_record_success()
 
             GLib.idle_add(self._on_data_loaded, data)
 
@@ -520,7 +528,7 @@ class ServerMonitorPage(BasePage):
             self._feed_listbox.append(row)
             count += 1
 
-        # Hoehe dynamisch anpassen (wie Generator-Seite)
+        # Höhe dynamisch anpassen (wie Generator-Seite)
         row_height = 50
         h = max(count * row_height, 80)
         self._feed_scroll.set_min_content_height(min(h, 500))

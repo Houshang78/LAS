@@ -39,17 +39,6 @@ _PERM_LABELS = {
     "firewall": _("Firewall-Verwaltung"),
 }
 
-try:
-    from lotto_analyzer.server.service import (
-        is_service_running, is_service_enabled, service_action,
-    )
-except ImportError:
-    # Standalone-Client: Server-Module nicht verfügbar
-    def is_service_running() -> bool: return False
-    def is_service_enabled() -> bool: return False
-    def service_action(action: str) -> tuple[bool, str]: return False, _("Server-Module nicht verfügbar")
-
-
 from lotto_analyzer.ui.pages.server_admin.part1 import Part1Mixin
 from lotto_analyzer.ui.pages.server_admin.part2 import Part2Mixin
 from lotto_analyzer.ui.pages.server_admin.part3 import Part3Mixin
@@ -136,49 +125,59 @@ class ServerAdminPage(BuildUIMixin, Part1Mixin, Part2Mixin, Part3Mixin, Part4Mix
             return
 
         def worker():
-            running = is_service_running()
-            enabled = is_service_enabled()
-
-            db_stats = None
-            if self.db:
+            # B.2: Service-Status via API holen (vorher: Server-Modul-Import).
+            running = enabled = False
+            if self.api_client:
                 try:
-                    db_stats = self.db.get_db_stats()
+                    s = self.api_client.get_service_status()
+                    running = bool(s.get("running"))
+                    enabled = bool(s.get("enabled"))
+                except Exception as e:
+                    logger.warning(f"Service-Status laden fehlgeschlagen: {e}")
+
+            # B.7: API-only — DB-Stats + ML-Status kommen vom Server.
+            db_stats = None
+            ml_info = None
+            if self.api_client:
+                try:
+                    db_stats = self.api_client.get_db_stats()
                 except Exception as e:
                     logger.warning(f"DB-Stats laden fehlgeschlagen: {e}")
-
-            ml_info = None
-            if self.db:
                 try:
-                    with self.db.connection() as conn:
-                        row = conn.execute(
-                            "SELECT * FROM ml_models ORDER BY last_trained DESC LIMIT 1"
-                        ).fetchone()
-                        if row:
-                            ml_info = dict(row)
+                    ml_status = self.api_client.ml_status()
+                    if isinstance(ml_status, dict):
+                        # Newest model = highest last_trained
+                        candidates = [
+                            v for v in ml_status.values()
+                            if isinstance(v, dict) and v.get("last_trained")
+                        ]
+                        if candidates:
+                            ml_info = max(
+                                candidates, key=lambda v: v.get("last_trained", ""),
+                            )
                 except Exception as e:
-                    logger.warning(f"ML-Modelle Abfrage fehlgeschlagen: {e}")
+                    logger.warning(f"ML-Status laden fehlgeschlagen: {e}")
 
             # TLS-Status
             tls_info = self._check_tls()
 
-            # Benutzer und Audit laden (falls User-DB vorhanden)
+            # D3: API-only — alle Auth-Daten kommen vom Server.
             users = []
             audit_entries = []
             api_key_display = "****...****"
             ssh_keys = []
             certificates = []
             try:
-                from lotto_analyzer.server.user_db import UserDatabase
-                user_db_path = self.config_manager.data_dir / "users.db"
-                if user_db_path.exists():
-                    udb = UserDatabase(user_db_path)
-                    users = udb.list_users()
-                    audit_entries = udb.get_audit_log(limit=self._audit_limit)
-                    keys = udb.list_api_keys()
+                if self.api_client:
+                    users = self.api_client.list_users()
+                    audit_entries = self.api_client.get_audit_log(limit=self._audit_limit)
+                    keys = self.api_client.list_api_keys()
                     if keys:
                         api_key_display = f"{keys[0].get('key_prefix', '****')}...****"
-                    ssh_keys = udb.list_public_keys()
-                    certificates = udb.list_certificates()
+                    ssh_keys = self.api_client.list_public_keys()
+                    certificates = self.api_client.list_certificates()
+                else:
+                    logger.warning("Server-Status: kein api_client")
             except Exception as e:
                 logger.warning(f"Benutzer/Audit laden fehlgeschlagen: {e}")
 
@@ -191,19 +190,32 @@ class ServerAdminPage(BuildUIMixin, Part1Mixin, Part2Mixin, Part3Mixin, Part4Mix
         threading.Thread(target=worker, daemon=True).start()
 
     def _check_tls(self) -> dict:
-        """TLS-Zertifikat-Status prüfen."""
-        config = self.config_manager.config
-        if not config.server.ssl_certfile:
-            return {"status": _("Nicht konfiguriert"), "expires": None}
+        """TLS-Zertifikat-Status prüfen.
+
+        B.2: API-only — Server liest sein eigenes Cert, parst Ablauf,
+        Client zeigt nur an. Vorher Direkt-File-Read aus Server-Pfaden,
+        was via Netzwerk gar nicht funktioniert hätte.
+        """
+        if not self.api_client:
+            return {"status": _("Server nicht verbunden"), "expires": None}
         try:
-            from lotto_analyzer.server.tls import check_cert_valid
-            expires = check_cert_valid(config.server.ssl_certfile)
-            if expires:
+            data = self.api_client.get_tls_status()
+            status = data.get("status", "?")
+            if status == "active":
+                exp_iso = data.get("expires_at", "")
+                # nur Datum extrahieren
+                exp_short = exp_iso.split("T")[0] if exp_iso else "?"
+                days = data.get("days_remaining", "?")
                 return {
-                    "status": f"Aktiv (bis {expires.strftime('%Y-%m-%d')})",
-                    "expires": str(expires),
+                    "status": f"Aktiv (bis {exp_short}, {days}d)",
+                    "expires": exp_iso,
                 }
-            return {"status": _("Ungültig"), "expires": None}
+            if status == "not_configured":
+                return {"status": _("Nicht konfiguriert"), "expires": None}
+            if status == "expired":
+                return {"status": _("Abgelaufen"), "expires": data.get("expires_at")}
+            err = data.get("error", "")
+            return {"status": err or _("Ungültig"), "expires": None}
         except Exception as e:
             return {"status": f"Fehler: {e}", "expires": None}
 
@@ -412,7 +424,7 @@ class ServerAdminPage(BuildUIMixin, Part1Mixin, Part2Mixin, Part3Mixin, Part4Mix
             revoked = f" [{_('WIDERRUFEN')}]" if cert.get("is_revoked") else ""
             row = Adw.ActionRow(
                 title=f"{cert.get('username', '?')} — {short_serial}{revoked}",
-                subtitle=f"{_('Gueltig bis')}: {cert.get('expires_at', '—')} | {cert.get('description', '')}",
+                subtitle=f"{_('Gültig bis')}: {cert.get('expires_at', '—')} | {cert.get('description', '')}",
             )
             if not cert.get("is_revoked"):
                 rev_btn = Gtk.Button(label=_("Widerrufen"))

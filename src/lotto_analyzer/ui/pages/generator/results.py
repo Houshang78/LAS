@@ -359,26 +359,20 @@ class ResultsMixin:
             draw_day = DrawDay.SATURDAY
 
         def worker():
+            # B.5: API-only — kein self.db-Fallback mehr.
             try:
-                # Neuestes Datum für diesen Ziehtag holen
-                if self.app_mode == "client" and self.api_client:
-                    dates = self.api_client.get_prediction_dates(draw_day.value)
-                elif self.db:
-                    dates = self.db.get_prediction_dates(draw_day.value)
-                else:
-                    dates = []
+                if not self.api_client:
+                    GLib.idle_add(self._on_reload_done, [], None, _("Server nicht verbunden."))
+                    return
+                dates = self.api_client.get_prediction_dates(draw_day.value)
                 if not dates:
                     GLib.idle_add(self._on_reload_done, [], None, _("Keine gespeicherten Vorhersagen gefunden."))
                     return
                 latest_date = dates[0]
-                # Alle Predictions für dieses Datum laden
-                if self.app_mode == "client" and self.api_client:
-                    data = self.api_client.get_predictions(draw_day.value, latest_date, 0, 1000)
-                    items = data.get("predictions", [])
-                elif self.db:
-                    items = self.db.get_predictions_paginated(draw_day.value, latest_date, 0, 1000)
-                else:
-                    items = []
+                data = self.api_client.get_predictions_paginated(
+                    draw_day.value, latest_date, offset=0, limit=1000,
+                )
+                items = data.get("predictions", [])
                 # In GenerationResult konvertieren
                 results = []
                 strategies = []
@@ -436,13 +430,9 @@ class ResultsMixin:
         draw_day = self._get_draw_day()
 
         def worker():
+            # B.5: API-only.
             try:
-                if self.app_mode == "client" and self.api_client:
-                    dates = self.api_client.get_prediction_dates(draw_day.value)
-                elif self.db:
-                    dates = self.db.get_prediction_dates(draw_day.value)
-                else:
-                    dates = []
+                dates = self.api_client.get_prediction_dates(draw_day.value) if self.api_client else []
                 GLib.idle_add(self._on_prediction_dates_loaded, dates)
             except Exception as e:
                 logger.debug(f"Prediction-Dates laden fehlgeschlagen: {e}")
@@ -464,7 +454,7 @@ class ResultsMixin:
         """Prev/Next-Buttons je nach Position aktivieren/deaktivieren."""
         total = len(self._prediction_dates)
         has_dates = total > 0
-        # prev = aelter = hoeherer Index
+        # prev = älter = höherer Index
         self._prev_date_btn.set_sensitive(
             has_dates and self._prediction_date_idx < total - 1
         )
@@ -474,7 +464,7 @@ class ResultsMixin:
         )
 
     def _on_prev_date(self, button: Gtk.Button) -> None:
-        """Ältere Predictions laden (hoeherer Index)."""
+        """Ältere Predictions laden (höherer Index)."""
         if self._prediction_date_idx < len(self._prediction_dates) - 1:
             self._prediction_date_idx += 1
             self._current_draw_date = self._prediction_dates[self._prediction_date_idx]

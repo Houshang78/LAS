@@ -132,24 +132,16 @@ class Part2Mixin:
             ssh_keys_list = [ssh_key] if ssh_key else None
 
             def worker():
+                # D3: API-only — Server hashed Passwort + setzt Rollen-Permissions.
                 try:
-                    if self.api_client and not self.db:
-                        self.api_client.create_user(
-                            un, pw, role, permissions,
-                            ssh_public_keys=ssh_keys_list,
-                            create_linux_account=create_linux,
-                        )
-                    else:
-                        from lotto_analyzer.server.auth import hash_password
-                        from lotto_analyzer.server.user_db import UserDatabase
-                        from lotto_common.models.user import Role
-                        udb = UserDatabase(self.config_manager.data_dir / "users.db")
-                        pw_hash, salt = hash_password(pw)
-                        if role == "admin":
-                            permissions_final = ALL_PERMISSIONS
-                        else:
-                            permissions_final = permissions
-                        udb.create_user(un, pw_hash, salt, Role(role), permissions_final)
+                    if not self.api_client:
+                        GLib.idle_add(status_label.set_text, _("Server nicht verbunden"))
+                        return
+                    self.api_client.create_user(
+                        un, pw, role, permissions,
+                        ssh_public_keys=ssh_keys_list,
+                        create_linux_account=create_linux,
+                    )
                     GLib.idle_add(status_label.set_text, f"Benutzer '{un}' erstellt")
                     GLib.idle_add(dialog.close)
                     GLib.idle_add(self._load_status)
@@ -221,13 +213,12 @@ class Part2Mixin:
                 new_perms = [p for p, sw in perm_switches.items() if sw.get_active()]
 
                 def worker():
+                    # D3: API-only.
                     try:
-                        if self.api_client and not self.db:
-                            self.api_client.update_user(user_id, permissions=new_perms)
-                        else:
-                            from lotto_analyzer.server.user_db import UserDatabase
-                            udb = UserDatabase(self.config_manager.data_dir / "users.db")
-                            udb.update_user(user_id, permissions=new_perms)
+                        if not self.api_client:
+                            GLib.idle_add(status_label.set_text, _("Server nicht verbunden"))
+                            return
+                        self.api_client.update_user(user_id, permissions=new_perms)
                         GLib.idle_add(status_label.set_text, "Berechtigungen gespeichert")
                         GLib.idle_add(dialog.close)
                         GLib.idle_add(self._load_status)
@@ -252,15 +243,15 @@ class Part2Mixin:
         orig_label = button.get_label()
 
         def worker():
+            # D3: API-only — Server hashed Passwort selbst.
             try:
-                if self.api_client and not self.db:
-                    self.api_client.update_user(user_id, password=new_pw)
-                else:
-                    from lotto_analyzer.server.auth import hash_password
-                    from lotto_analyzer.server.user_db import UserDatabase
-                    udb = UserDatabase(self.config_manager.data_dir / "users.db")
-                    pw_hash, salt = hash_password(new_pw)
-                    udb.update_user(user_id, password_hash=pw_hash, salt=salt)
+                if not self.api_client:
+                    GLib.idle_add(
+                        self._show_error_restore_btn, button, orig_label,
+                        _("Server nicht verbunden"),
+                    )
+                    return
+                self.api_client.update_user(user_id, password=new_pw)
                 GLib.idle_add(self._show_new_password, button, new_pw, orig_label)
             except Exception as e:
                 GLib.idle_add(self._show_error_restore_btn, button, orig_label, str(e))
@@ -301,12 +292,14 @@ class Part2Mixin:
 
         def worker():
             try:
-                if self.api_client and not self.db:
-                    self.api_client.update_user(user_id, is_active=new_active)
-                else:
-                    from lotto_analyzer.server.user_db import UserDatabase
-                    udb = UserDatabase(self.config_manager.data_dir / "users.db")
-                    udb.update_user(user_id, is_active=1 if new_active else 0)
+                # D3: API-only.
+                if not self.api_client:
+                    GLib.idle_add(
+                        self._show_error_restore_btn, button, orig_label,
+                        _("Server nicht verbunden"),
+                    )
+                    return
+                self.api_client.update_user(user_id, is_active=new_active)
                 GLib.idle_add(self._load_status)
             except Exception as e:
                 GLib.idle_add(self._show_error_restore_btn, button, orig_label, str(e))
@@ -331,13 +324,15 @@ class Part2Mixin:
             orig_label = button.get_label()
 
             def worker():
+                # D3: API-only.
                 try:
-                    if self.api_client and not self.db:
-                        self.api_client.admin_disconnect_user(user_id)
-                    else:
-                        from lotto_analyzer.server.user_db import UserDatabase
-                        udb = UserDatabase(self.config_manager.data_dir / "users.db")
-                        udb.disconnect_user(user_id)
+                    if not self.api_client:
+                        GLib.idle_add(
+                            self._show_error_restore_btn, button, orig_label,
+                            _("Server nicht verbunden"),
+                        )
+                        return
+                    self.api_client.admin_disconnect_user(user_id)
                     GLib.idle_add(self._load_status)
                 except Exception as e:
                     GLib.idle_add(self._show_error_restore_btn, button, orig_label, str(e))
@@ -367,13 +362,15 @@ class Part2Mixin:
             orig_label = button.get_label()
 
             def worker():
+                # D3: API-only.
                 try:
-                    if self.api_client and not self.db:
-                        self.api_client.admin_ban_user(user_id)
-                    else:
-                        from lotto_analyzer.server.user_db import UserDatabase
-                        udb = UserDatabase(self.config_manager.data_dir / "users.db")
-                        udb.ban_user(user_id)
+                    if not self.api_client:
+                        GLib.idle_add(
+                            self._show_error_restore_btn, button, orig_label,
+                            _("Server nicht verbunden"),
+                        )
+                        return
+                    self.api_client.admin_ban_user(user_id)
                     GLib.idle_add(self._load_status)
                 except Exception as e:
                     GLib.idle_add(self._show_error_restore_btn, button, orig_label, str(e))
@@ -403,13 +400,15 @@ class Part2Mixin:
             orig_label = button.get_label()
 
             def worker():
+                # D3: API-only.
                 try:
-                    if self.api_client and not self.db:
-                        self.api_client.admin_delete_user(user_id)
-                    else:
-                        from lotto_analyzer.server.user_db import UserDatabase
-                        udb = UserDatabase(self.config_manager.data_dir / "users.db")
-                        udb.delete_user(user_id)
+                    if not self.api_client:
+                        GLib.idle_add(
+                            self._show_error_restore_btn, button, orig_label,
+                            _("Server nicht verbunden"),
+                        )
+                        return
+                    self.api_client.admin_delete_user(user_id)
                     GLib.idle_add(self._load_status)
                 except Exception as e:
                     GLib.idle_add(self._show_error_restore_btn, button, orig_label, str(e))
@@ -473,22 +472,15 @@ class Part2Mixin:
         """Audit-Einträge im Hintergrund löschen."""
         def worker():
             try:
+                # D3: API-only.
                 if self.api_client:
                     for aid in ids:
                         try:
                             self.api_client.delete_audit_entry(aid)
                         except Exception as e:
                             logger.warning(f"Audit-Eintrag {aid} löschen fehlgeschlagen: {e}")
-                elif self.db:
-                    from lotto_analyzer.server.user_db import UserDatabase
-                    user_db_path = self.config_manager.data_dir / "users.db"
-                    if user_db_path.exists():
-                        udb = UserDatabase(user_db_path)
-                        for aid in ids:
-                            try:
-                                udb.delete_audit_entry(aid)
-                            except Exception as e:
-                                logger.warning(f"Audit-Eintrag {aid} lokal löschen fehlgeschlagen: {e}")
+                else:
+                    logger.warning("delete_audit_entries: kein api_client")
                 GLib.idle_add(self._load_status)
             except Exception as e:
                 logger.warning(f"Audit-Einträge löschen fehlgeschlagen: {e}")
@@ -513,26 +505,20 @@ class Part2Mixin:
             button.set_sensitive(False)
 
             def worker():
+                # D3: API-only — generate_api_key + Hash bleiben am Server.
                 try:
-                    if self.api_client and not self.db:
-                        data = self.api_client.rotate_api_key()
-                        prefix = data.get("key_prefix", "????")
+                    if not self.api_client:
                         GLib.idle_add(
                             self._api_key_display.set_subtitle,
-                            f"{prefix}...****",
+                            _("Server nicht verbunden"),
                         )
-                    else:
-                        from lotto_analyzer.server.auth import generate_api_key
-                        from lotto_analyzer.server.user_db import UserDatabase
-                        import hashlib
-                        udb = UserDatabase(self.config_manager.data_dir / "users.db")
-                        new_key = generate_api_key()
-                        key_hash = hashlib.sha256(new_key.encode()).hexdigest()
-                        udb.create_api_key(1, key_hash, new_key[:8], "Rotierter Key")
-                        GLib.idle_add(
-                            self._api_key_display.set_subtitle,
-                            f"{new_key[:8]}...{new_key[-4:]}",
-                        )
+                        return
+                    data = self.api_client.rotate_api_key()
+                    prefix = data.get("key_prefix", "????")
+                    GLib.idle_add(
+                        self._api_key_display.set_subtitle,
+                        f"{prefix}...****",
+                    )
                 except Exception as e:
                     GLib.idle_add(
                         self._api_key_display.set_subtitle, f"Fehler: {e}",

@@ -178,28 +178,17 @@ class MlSectionMixin:
     def _on_combo_toggle(
         self, switch: Gtk.Switch, state: bool, key: str,
     ) -> bool:
-        """Manueller Combo-Toggle."""
+        """Manueller Combo-Toggle (API-only)."""
+        if not self.api_client:
+            return False
         draw_day = self._get_draw_day()
-
-        if self.app_mode == "client" and self.api_client:
-            def worker():
-                try:
-                    self.api_client.toggle_combo(draw_day.value, key, state)
-                    GLib.idle_add(self._refresh_combo_status)
-                except Exception as e:
-                    logger.warning(f"Combo-Toggle API fehlgeschlagen: {e}")
-            threading.Thread(target=worker, daemon=True).start()
-            return False
-
-        if not self.db:
-            return False
 
         def worker():
             try:
-                self.db.set_combo_active(draw_day.value, key, state)
+                self.api_client.toggle_combo(draw_day.value, key, state)
                 GLib.idle_add(self._refresh_combo_status)
             except Exception as e:
-                logger.warning(f"Combo-Toggle fehlgeschlagen: {e}")
+                logger.warning(f"Combo-Toggle API fehlgeschlagen: {e}")
 
         threading.Thread(target=worker, daemon=True).start()
         return False
@@ -217,7 +206,7 @@ class MlSectionMixin:
             self._update_target_date()
             draw_date = self._current_draw_date
         if not draw_date:
-            logger.warning("Kein Zieldatum verfügbar, ueberspringe Combo-Generierung")
+            logger.warning("Kein Zieldatum verfügbar, überspringe Combo-Generierung")
             self._combo_status_label.set_label(_("Kein Zieldatum verfügbar"))
             btn.set_sensitive(True)
             self._combo_spinner.stop()

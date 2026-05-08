@@ -218,7 +218,7 @@ class TtsPopover(Gtk.Popover):
         if idx < 0 or idx >= len(TTS_LANGUAGES):
             return
         code = TTS_LANGUAGES[idx][0]
-        # Laufende Wiedergabe stoppen (Neu-Synthese noetig)
+        # Laufende Wiedergabe stoppen (Neu-Synthese nötig)
         if self._audio and self._audio.is_speaking:
             self._stop()
         if self._audio:

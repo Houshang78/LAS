@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import sqlite3
 import threading
 from collections import Counter
 from datetime import date, datetime

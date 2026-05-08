@@ -30,7 +30,6 @@ logger = get_logger("scraper.part1")
 from lotto_analyzer.ui.widgets.help_button import HelpButton
 from lotto_analyzer.ui.widgets.draw_input import DrawInput
 
-import sqlite3
 
 DAY_LABELS = {
     "saturday": "Samstag",
@@ -250,9 +249,9 @@ class Part1Mixin:
         verify_row.add_suffix(self._verify_btn)
         ai_group.add(verify_row)
 
-        # 2) DB-Qualitätspruefung
+        # 2) DB-Qualitätsprüfung
         quality_row = Adw.ActionRow(
-            title=_("DB-Qualitätspruefung"),
+            title=_("DB-Qualitätsprüfung"),
             subtitle=_("Lücken, Duplikate, Anomalien, fehlende Ziehungen"),
         )
         quality_row.add_prefix(Gtk.Image.new_from_icon_name("dialog-warning-symbolic"))
@@ -317,7 +316,7 @@ class Part1Mixin:
 
         self._crawl_task_id = task_id
 
-        # WS-Listener fuer instant Updates (Polling bleibt als Fallback)
+        # WS-Listener für instant Updates (Polling bleibt als Fallback)
         try:
             from lotto_analyzer.ui.widgets.ws_manager import ui_ws_manager
             ui_ws_manager.on("task_update", self._on_ws_crawl_task)

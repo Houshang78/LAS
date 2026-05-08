@@ -142,7 +142,7 @@ class AudioService:
                 if on_error:
                     GLib.idle_add(on_error, str(e))
             finally:
-                # Temp-Datei aufräumen falls nicht an Player uebergeben
+                # Temp-Datei aufräumen falls nicht an Player übergeben
                 if not played and tmp_path:
                     try:
                         Path(tmp_path).unlink(missing_ok=True)

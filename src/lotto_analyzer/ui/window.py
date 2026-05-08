@@ -35,6 +35,7 @@ PAGES = [
     ("settings",     "emblem-system-symbolic",     "Einstellungen"),
     ("security",     "security-high-symbolic",     "Sicherheit"),
     ("server_monitor", "computer-symbolic",        "Monitor"),
+    ("server_workers", "system-run-symbolic",      "Worker"),
     ("server_admin", "network-server-symbolic",    "Server"),
 ]
 
@@ -68,7 +69,7 @@ class MainWindow(Adw.ApplicationWindow):
         if profile_manager and hasattr(profile_manager, 'client'):
             self.api_client = profile_manager.client
 
-        self.set_title("LottoAnalyzer")
+        self.set_title("lotto-analyzer System")
         cfg = self.config_manager.config
         self.set_default_size(
             getattr(cfg, "window_width", 1200),
@@ -82,15 +83,22 @@ class MainWindow(Adw.ApplicationWindow):
         logger.info("Hauptfenster erstellt")
 
     def _build_ui(self) -> None:
-        """UI aufbauen: HeaderBar + SplitView (Sidebar + Content)."""
+        """UI aufbauen: HeaderBar + SplitView (Sidebar + Content).
+
+        D4.1: Aeussere Box ist jetzt in eine ToastOverlay gewrappt, damit
+        Connection-Fehler / API-Errors als kurze Banner sichtbar werden
+        (vorher nur im Log).
+        """
         # Aeussere Box
         outer_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        self.set_content(outer_box)
+        self._toast_overlay = Adw.ToastOverlay()
+        self._toast_overlay.set_child(outer_box)
+        self.set_content(self._toast_overlay)
 
         # HeaderBar
         header = Adw.HeaderBar()
         self._window_title = Adw.WindowTitle(
-            title="LottoAnalyzer",
+            title="lotto-analyzer System",
             subtitle="Lotto 6aus49 – Analyse &amp; Vorhersage",
         )
         header.set_title_widget(self._window_title)
@@ -263,8 +271,8 @@ class MainWindow(Adw.ApplicationWindow):
     def _create_pages(self) -> None:
         """Alle Seiten erstellen und zum Stack hinzufügen.
 
-        Im Client-Modus werden Seiten mit fehlenden Abhaengigkeiten
-        (core-Module) uebersprungen statt zu crashen.
+        Im Client-Modus werden Seiten mit fehlenden Abhängigkeiten
+        (core-Module) übersprungen statt zu crashen.
         """
         import importlib
 
@@ -284,6 +292,7 @@ class MainWindow(Adw.ApplicationWindow):
             ("settings",     "lotto_analyzer.ui.pages.settings",     "SettingsPage"),
             ("security",     "lotto_analyzer.ui.pages.security",     "SecurityPage"),
             ("server_monitor", "lotto_analyzer.ui.pages.server_monitor", "ServerMonitorPage"),
+            ("server_workers", "lotto_analyzer.ui.pages.server_workers", "ServerWorkersPage"),
             ("server_admin", "lotto_analyzer.ui.pages.server_admin", "ServerAdminPage"),
         ]
 
@@ -293,7 +302,7 @@ class MainWindow(Adw.ApplicationWindow):
                 page_class = getattr(module, class_name)
             except ImportError as e:
                 if self.app_mode == "client":
-                    logger.info(f"Seite '{page_id}' uebersprungen (Client-Modus): {e}")
+                    logger.info(f"Seite '{page_id}' übersprungen (Client-Modus): {e}")
                     continue
                 raise
 
@@ -808,6 +817,16 @@ class MainWindow(Adw.ApplicationWindow):
                 return True
 
         return False
+
+    def add_toast(self, toast) -> None:
+        """D4.1: Toast über die ToastOverlay anzeigen.
+
+        Wird von ui_helpers.show_toast aufgerufen — der Helper sucht
+        per `hasattr(window, 'add_toast')`. Vor D4 fehlte diese Methode,
+        sodass alle Toasts silently dropped wurden.
+        """
+        if hasattr(self, "_toast_overlay") and self._toast_overlay is not None:
+            self._toast_overlay.add_toast(toast)
 
     def _on_close_request(self, window) -> bool:
         """Ressourcen aufräumen und Fenstergröße speichern."""

@@ -26,7 +26,6 @@ from lotto_analyzer.ui.widgets.draw_input import DrawInput
 
 logger = get_logger("scraper.part2")
 
-import sqlite3
 
 
 class Part2Mixin:
@@ -92,7 +91,7 @@ class Part2Mixin:
             return
 
         self._set_crawl_controls(False)
-        self._status_row.set_subtitle(_("Pruefe neue Ziehungen..."))
+        self._status_row.set_subtitle(_("Prüfe neue Ziehungen..."))
         self._crawl_result.set_visible(False)
 
         # Standalone: Refresh nur via API verfügbar
@@ -272,103 +271,26 @@ class Part2Mixin:
         if not draw:
             return
 
-        if self.app_mode == "client" and self.api_client and not self.db:
-            # Client-Modus: via API eintragen
-            def api_worker():
-                try:
-                    self.api_client.manual_draw_entry(
-                        draw_date=draw.draw_date.isoformat(),
-                        numbers=sorted(draw.numbers),
-                        super_number=draw.super_number or 0,
-                        draw_day=draw.draw_day.value,
-                    )
-                    GLib.idle_add(widget._status.set_label, _("Erfolgreich gespeichert (Server)."))
-                except Exception as e:
-                    GLib.idle_add(widget._status.set_label, f"Server-Fehler: {e}")
-
-            threading.Thread(target=api_worker, daemon=True).start()
+        if not self.api_client:
+            widget._status.set_label(_("Server nicht verbunden."))
             return
 
-        if not self.db:
-            return
-        try:
-            self.db.insert_draw(draw)
-        except Exception as e:
-            widget._status.set_label(f"DB-Fehler: {e}")
-
-    # ═══════════════════════════════════════════
-    # AI-Kontrolle 1: Quelle ↔ DB Verifikation
-    # ═══════════════════════════════════════════
-
-    def _verify_source_vs_db(self) -> str:
-        """Vergleich: was wurde gescrapt/importiert vs was steht in der DB."""
-        if not self._last_source_draws or not self.db:
-            return _("Keine Quelldaten zum Vergleichen vorhanden.")
-
-        report = [f"=== VERIFIKATION: {self._last_source_label} ===\n"]
-        source = self._last_source_draws
-        ok_count = 0
-        mismatch = []
-        missing_in_db = []
-
-        # Stichproben (max 50 oder alle wenn weniger)
-        sample = source if len(source) <= 50 else (
-            source[:15] + source[len(source)//2-5:len(source)//2+5] + source[-15:]
-        )
-
-        for draw in sample:
-            db_draws = self.db.get_draws(draw.draw_day)
-            db_match = None
-            for db_d in db_draws:
-                if db_d.draw_date == draw.draw_date:
-                    db_match = db_d
-                    break
-
-            if db_match is None:
-                missing_in_db.append(draw)
-                continue
-
-            # Zahlen vergleichen
-            src_nums = sorted(draw.numbers)
-            db_nums = sorted(db_match.numbers)
-            if src_nums == db_nums and draw.super_number == db_match.super_number:
-                ok_count += 1
-            else:
-                mismatch.append({
-                    "date": draw.draw_date,
-                    "source_nums": src_nums,
-                    "db_nums": db_nums,
-                    "source_sz": draw.super_number,
-                    "db_sz": db_match.super_number,
-                })
-
-        report.append(f"Geprüft: {len(sample)} von {len(source)} Ziehungen")
-        report.append(f"Uebereinstimmend: {ok_count}/{len(sample)}")
-
-        if mismatch:
-            report.append(f"\n⚠️ ABWEICHUNGEN ({len(mismatch)}):")
-            for m in mismatch[:10]:
-                report.append(
-                    f"  {m['date']}:"
-                    f"\n    Quelle: {m['source_nums']} SZ={m['source_sz']}"
-                    f"\n    DB:     {m['db_nums']} SZ={m['db_sz']}"
+        def api_worker():
+            try:
+                self.api_client.manual_draw_entry(
+                    draw_date=draw.draw_date.isoformat(),
+                    numbers=sorted(draw.numbers),
+                    super_number=draw.super_number or 0,
+                    draw_day=draw.draw_day.value,
                 )
+                GLib.idle_add(widget._status.set_label, _("Erfolgreich gespeichert (Server)."))
+            except Exception as e:
+                GLib.idle_add(widget._status.set_label, f"Server-Fehler: {e}")
 
-        if missing_in_db:
-            report.append(f"\n⚠️ FEHLEN IN DB ({len(missing_in_db)}):")
-            for d in missing_in_db[:10]:
-                report.append(f"  {d.draw_date} {d.draw_day.value}: {sorted(d.numbers)}")
+        threading.Thread(target=api_worker, daemon=True).start()
 
-        if not mismatch and not missing_in_db:
-            report.append("\n✅ Alle geprüften Ziehungen stimmen überein!")
-
-        # Stichproben-Details anzeigen
-        report.append(f"\nStichproben-Details (erste 5):")
-        for draw in sample[:5]:
-            report.append(
-                f"  {draw.draw_date} ({draw.draw_day.value}): "
-                f"{sorted(draw.numbers)} SZ={draw.super_number}"
-            )
-
-        return "\n".join(report)
+    # _verify_source_vs_db entfernt (C.2). Verifikation läuft jetzt
+    # serverseitig: DBIntegrityChecker bei jedem Crawl, Endpoint
+    # GET /db/integrity. UI ruft api_client.db_integrity() statt lokal
+    # zu vergleichen — Quelle der Wahrheit ist der Server.
 

@@ -19,7 +19,7 @@ from lotto_common.utils.logging_config import get_logger
 logger = get_logger("telegram_page")
 
 
-# ── QR-Code Widget (Cairo-basiert, kein Pillow noetig) ──
+# ── QR-Code Widget (Cairo-basiert, kein Pillow nötig) ──
 
 
 class QRCodeWidget(Gtk.DrawingArea):

@@ -19,7 +19,6 @@ from lotto_analyzer.ui.widgets.number_ball import NumberBallRow
 
 from lotto_analyzer.ui.ui_helpers import format_eur
 
-import sqlite3
 
 import json
 
@@ -52,21 +51,18 @@ class Part2Mixin:
 
         def worker():
             try:
+                # D2: API-only — kein self.app_db-Fallback mehr.
                 if self.api_client:
-                    reports = self.api_client.get_reports(
-                        draw_day=draw_day, draw_days=game_draw_days, limit=50,
+                    reports = self.api_client.get_cycle_reports(
+                        draw_day=draw_day, limit=50,
                     )
                     if not isinstance(reports, list):
-                        logger.warning("get_reports: unerwarteter Typ %s", type(reports))
+                        logger.warning("get_cycle_reports: unerwarteter Typ %s", type(reports))
                         reports = []
-                elif self.app_db:
-                    reports = self.app_db.get_cycle_reports(
-                        draw_day=draw_day, draw_days=game_draw_days, limit=50,
-                    )
                 else:
                     reports = []
                 GLib.idle_add(self._on_reports_loaded, reports, None)
-            except (sqlite3.Error, ConnectionError, TimeoutError, OSError) as e:
+            except (ConnectionError, TimeoutError, OSError) as e:
                 GLib.idle_add(self._on_reports_loaded, [], str(e))
             except Exception as e:
                 logger.exception(f"Unerwarteter Fehler beim Laden der Berichte: {e}")
@@ -166,15 +162,14 @@ class Part2Mixin:
 
         # Vollständigen Bericht laden
         def worker():
+            # B.3: API-only, kein self.app_db-Fallback mehr.
             try:
                 if self.api_client:
-                    full = self.api_client.get_report(report_id)
-                elif self.app_db:
-                    full = self.app_db.get_cycle_report(report_id)
+                    full = self.api_client.get_cycle_report(report_id)
                 else:
-                    full = report
+                    full = None
                 GLib.idle_add(self._show_detail, full or report)
-            except (sqlite3.Error, ConnectionError, TimeoutError, OSError) as e:
+            except (ConnectionError, TimeoutError, OSError) as e:
                 logger.warning(f"Bericht laden fehlgeschlagen: {e}")
                 GLib.idle_add(self._show_detail, report)
             except Exception as e:
@@ -322,7 +317,7 @@ class Part2Mixin:
                         title=f"{matches_key} {_('Richtige')}",
                         subtitle=f"{count}x",
                     )
-                    # Placeholder waehrend Daten noch nicht geladen
+                    # Placeholder während Daten noch nicht geladen
                     placeholder = Adw.ActionRow(title=_("Laden..."))
                     expander.add_row(placeholder)
                     # Zustand-Flags
@@ -380,13 +375,11 @@ class Part2Mixin:
             return
 
         def worker():
+            # B.3: API-only — get_draw_prizes liefert direkt die Liste.
             try:
                 prizes = []
                 if self.api_client:
-                    data = self.api_client.get_draw_prizes(draw_day, draw_date)
-                    prizes = data.get("prizes", [])
-                elif self.db:
-                    prizes = self.db.get_draw_prizes(draw_day, draw_date)
+                    prizes = self.api_client.get_draw_prizes(draw_day, draw_date)
                 if prizes:
                     self._cache_set(self._prizes_cache, cache_key, prizes)
                 GLib.idle_add(self._populate_prizes, prizes)
@@ -475,15 +468,18 @@ class Part2Mixin:
         if cached is not None:
             return cached
 
+        # B.3: API-only — Server liefert hits + accuracy via /reports/{id}/hits.
+        # Wenn kein report_id da ist (z.B. neuer Report ohne ID), Fallback
+        # auf get_predictions_for_date + Client-side Filter nach min_matches.
         if self.api_client and report_id:
             data = self.api_client.get_report_hits(report_id, min_matches)
             hits = data.get("hits", [])
             accuracy = data.get("accuracy", {})
             self._cache_set(self._accuracy_cache, report_id, accuracy)
-        elif self.db:
-            hits = self.db.get_predictions_with_min_matches(
-                draw_day, draw_date, min_matches,
-            )
+        elif self.api_client:
+            # Fallback: alle Predictions des Datums holen + lokal filtern
+            preds = self.api_client.get_predictions_for_date(draw_day, draw_date)
+            hits = [p for p in preds if int(p.get("matches", 0) or 0) >= min_matches]
         else:
             hits = []
 
@@ -524,7 +520,7 @@ class Part2Mixin:
         return False
 
     def _create_hit_card(self, hit: dict) -> Adw.ActionRow:
-        """Prediction-Card fuer einen Treffer erstellen."""
+        """Prediction-Card für einen Treffer erstellen."""
         position = hit.get("position", 0)
         pred_id = hit.get("id", 0)
         strategy = hit.get("strategy", "?")
@@ -578,11 +574,9 @@ class Part2Mixin:
             return {"numbers_text": "—"}
         try:
             from lotto_common.models.draw import DrawDay
-            dd = DrawDay(draw_day)
+            # D2: API-only — kein self.db-Fallback mehr.
             if self.api_client:
                 draw = self.api_client.get_latest_draw(draw_day)
-            elif self.db:
-                draw = self.db.get_latest_draw(dd)
             else:
                 return {"numbers_text": "—"}
             if not draw:

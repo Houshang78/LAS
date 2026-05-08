@@ -2,7 +2,6 @@
 
 import csv
 import io
-import sqlite3
 from pathlib import Path
 import threading
 from datetime import date, datetime
@@ -369,7 +368,7 @@ class GenerationMixin1:
         self._all_check.set_active(False)
         self._ai_auto_active = True
 
-        # Checks deaktivieren waehrend AI entscheidet
+        # Checks deaktivieren während AI entscheidet
         for cb in self._strategy_checks.values():
             cb.set_sensitive(False)
 

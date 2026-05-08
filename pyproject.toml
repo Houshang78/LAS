@@ -4,13 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lotto-analyzer"
-version = "1.0.0"
-description = "LAS — Lotto Analyzer System (GTK4 Desktop Client)"
+version = "1.2.0"
+description = "lotto-analyzer System (GTK4 Desktop Client)"
 requires-python = ">=3.12"
 dependencies = [
     "lotto-common",
     "httpx>=0.27.0",
     "matplotlib>=3.8.0",
+    # D4.2: Hard-Dep — sonst keine Live-Updates und User merkt's nicht.
+    "websocket-client>=1.6.0",
 ]
 
 [project.optional-dependencies]

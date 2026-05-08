@@ -21,7 +21,7 @@ class ImprovementReportPanel(Gtk.Box):
     - Bericht anzeigen (selectable Text)
     - Komplett vorlesen (SpeakButton)
     - Markierten Text vorlesen
-    - AI-Diskussion ueber den Bericht
+    - AI-Diskussion über den Bericht
     - Spracheingabe via MicButton
     """
 
@@ -211,7 +211,7 @@ class ImprovementReportPanel(Gtk.Box):
         self._ask_ai(question)
 
     def _on_mic_transcribed(self, btn, text) -> None:
-        """Transkription in Eingabefeld uebernehmen."""
+        """Transkription in Eingabefeld übernehmen."""
         self._entry.set_text(text)
 
     def _ask_ai(self, question: str) -> None:

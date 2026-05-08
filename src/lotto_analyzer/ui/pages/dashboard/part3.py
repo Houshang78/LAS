@@ -263,40 +263,25 @@ class Part3Mixin:
         }
 
         def worker():
+            # B.6: API-only — kein self.db / self.app_db mehr.
             prizes = []
             live_jackpot: dict = {}
+            if not self.api_client:
+                GLib.idle_add(self._show_prizes_dialog, day_str, [], None)
+                return
             try:
-                if self.api_client:
-                    resp = self.api_client.get_latest_prizes(day_str)
-                    prizes = resp.get("prizes", [])
-                elif self.db:
-                    prizes = self.db.get_latest_prizes(day_str)
+                prizes = self.api_client.get_latest_prizes(day_str)
             except Exception as e:
                 logger.warning(f"Gewinnquoten laden fehlgeschlagen ({day_str}): {e}")
-            # Live-Jackpot
+            # Live-Jackpot — neuer /jackpot/{draw_day} Endpoint statt KV-Setting
             try:
-                if self.api_client:
-                    all_jp = self.api_client.get_live_jackpot()
-                    game_key = _day_to_game.get(day_str, "")
-                    info = all_jp.get(game_key, {})
-                    if info and info.get("next_day", "") == day_str:
-                        live_jackpot = {
-                            "next_jackpot_mio": info.get("next_mio", 0),
-                            "next_date": info.get("next_date", ""),
-                            "next_day_str": info.get("next_day", ""),
-                        }
-                elif self.app_db:
-                    game_key = _day_to_game.get(day_str, "")
-                    next_day = self.app_db.get_setting(f"jackpot_{game_key}_next_day", "")
-                    if next_day == day_str:
-                        mio_str = self.app_db.get_setting(f"jackpot_{game_key}_next_mio", "0")
-                        mio = float(mio_str) if mio_str else 0.0
-                        if mio > 0:
-                            live_jackpot = {
-                                "next_jackpot_mio": mio,
-                                "next_date": self.app_db.get_setting(f"jackpot_{game_key}_next_date", ""),
-                                "next_day_str": next_day,
-                            }
+                jp = self.api_client.get_jackpot(day_str)
+                if isinstance(jp, dict) and jp.get("next_day", "") == day_str:
+                    live_jackpot = {
+                        "next_jackpot_mio": jp.get("next_mio", 0),
+                        "next_date": jp.get("next_date", ""),
+                        "next_day_str": jp.get("next_day", ""),
+                    }
             except Exception as e:
                 logger.warning(f"Live-Jackpot laden fehlgeschlagen ({day_str}): {e}")
             GLib.idle_add(self._show_prizes_dialog, day_str, prizes, live_jackpot)

@@ -69,7 +69,15 @@ class WebSocketClient:
                         break
 
             except ImportError:
-                logger.info("websocket-client not installed — WebSocket disabled")
+                # D4.2: websocket-client ist Hard-Dep im .deb
+                # (python3-websocket). Wenn der Import trotzdem failt,
+                # liegt es an einer kaputten Installation — laut warnen
+                # statt silent disable.
+                logger.error(
+                    "websocket-client nicht installiert — Live-Updates "
+                    "DEAKTIVIERT. Reparatur: 'sudo apt install --reinstall "
+                    "python3-websocket' oder 'pip install websocket-client'.",
+                )
                 self._running = False
                 return
             except Exception as e:

@@ -403,7 +403,7 @@ class LoginDialog(Adw.Dialog):
         self._pw_spinner.set_visible(False)
 
         if result.get("status") == "2fa_required":
-            # 2FA noetig — zu Phase 2 wechseln
+            # 2FA nötig — zu Phase 2 wechseln
             self._challenge_id = result["challenge_id"]
             self._stack.set_visible_child_name("twofa")
             self._twofa_error.set_visible(False)

@@ -48,7 +48,7 @@ class LottoAnalyzerApp(Adw.Application):
         ui_lang = getattr(self.config_manager.config, "ui_language", "de")
         setup_i18n(ui_lang)
 
-        logger.info(f"LottoAnalyzer Client gestartet (Sprache: {ui_lang})")
+        logger.info(f"lotto-analyzer Client gestartet (Sprache: {ui_lang})")
 
     def do_activate(self) -> None:
         """App-Fenster erstellen oder fokussieren."""

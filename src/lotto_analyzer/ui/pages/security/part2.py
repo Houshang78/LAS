@@ -65,7 +65,7 @@ class Part2Mixin:
     def _build_geoip_section(self, content: Gtk.Box) -> None:
         group = Adw.PreferencesGroup(
             title=_("GeoIP-Filter"),
-            description=_("Laenderspezifische Zugriffskontrolle"),
+            description=_("Länderspezifische Zugriffskontrolle"),
         )
         content.append(group)
 
@@ -87,7 +87,7 @@ class Part2Mixin:
         group.add(self._geoip_db_row)
 
         self._geoip_countries_row = Adw.ActionRow(
-            title=_("Erlaubte Laender"),
+            title=_("Erlaubte Länder"),
             subtitle=_("Keine konfiguriert"),
         )
         group.add(self._geoip_countries_row)

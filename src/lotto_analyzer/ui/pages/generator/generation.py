@@ -2,7 +2,6 @@
 
 import csv
 import io
-import sqlite3
 from pathlib import Path
 import threading
 from datetime import date, datetime

@@ -105,7 +105,7 @@ class SettingsPage(Part1Mixin, Part2Mixin, Part3Mixin, Part4Mixin, BasePage):
             description=_("Lokale Claude-CLI-Installation"),
         )
         cli_group.set_header_suffix(HelpButton(
-            _("Lokale Claude-Ausfuehrung ohne API-Key. "
+            _("Lokale Claude-Ausführung ohne API-Key. "
               "Muss installiert und authentifiziert sein (claude auth login).")
         ))
         content.append(cli_group)
@@ -187,7 +187,7 @@ class SettingsPage(Part1Mixin, Part2Mixin, Part3Mixin, Part4Mixin, BasePage):
             description=_("Direkte Verbindung (ohne Profil)"),
         )
         server_group.set_header_suffix(HelpButton(
-            _("Direkte Verbindung zum LottoAnalyzer-Server wenn kein Profil gewählt ist.")
+            _("Direkte Verbindung zum lotto-analyzer-Server wenn kein Profil gewählt ist.")
         ))
         content.append(server_group)
 
@@ -309,11 +309,11 @@ class SettingsPage(Part1Mixin, Part2Mixin, Part3Mixin, Part4Mixin, BasePage):
             (self._learn_enabled, _("Hauptschalter: Deaktiviert alle Lernfunktionen auf einmal.")),
             (self._auto_retrain, _("Nach jeder neuen Ziehung werden RF-, GB- und LSTM-Modelle mit den neuen Daten nachtrainiert.")),
             (self._train_on_startup, _("Beim Serverstart wird geprüft ob ML-Modelle fehlen oder veraltet sind — falls ja, automatisches Training.")),
-            (self._self_improve, _("Claude schlaegt neue Features und Strategien vor, testet sie in einer Sandbox und uebernimmt nur Verbesserungen. Braucht API-Key oder CLI.")),
+            (self._self_improve, _("Claude schlaegt neue Features und Strategien vor, testet sie in einer Sandbox und übernimmt nur Verbesserungen. Braucht API-Key oder CLI.")),
             (self._crawl_timing, _("Lernt aus vergangenen Crawls wann Ergebnisse online verfügbar sind und passt die Crawl-Zeiten automatisch an.")),
             (self._strategy_weights, _("Passt Gewichtung der Strategien (hot/cold/ml/avoid/...) automatisch anhand der Trefferquoten an.")),
             (self._eval_window, _("Anzahl der letzten Vorhersagen die für die Gewichtsberechnung herangezogen werden.")),
-            (self._max_model_age, _("Modelle aelter als X Tage werden beim nächsten Zyklus automatisch neu trainiert.")),
+            (self._max_model_age, _("Modelle älter als X Tage werden beim nächsten Zyklus automatisch neu trainiert.")),
         ]:
             row.add_suffix(HelpButton(text))
 

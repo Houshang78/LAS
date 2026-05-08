@@ -34,8 +34,14 @@ class Part4Mixin:
         self._service_status.set_subtitle(f"{action.title()}...")
 
         def worker():
+            # B.2: API-only — systemctl-Aufruf am Server.
             try:
-                ok, message = service_action(action)
+                if not self.api_client:
+                    GLib.idle_add(self._on_action_done, False, _("Server nicht verbunden"))
+                    return
+                resp = self.api_client.service_action(action)
+                ok = bool(resp.get("ok"))
+                message = resp.get("message", "")
                 GLib.idle_add(self._on_action_done, ok, message)
             except Exception as e:
                 GLib.idle_add(self._on_action_done, False, str(e))
@@ -79,18 +85,24 @@ class Part4Mixin:
         return False
 
     def _on_backup(self, button: Gtk.Button) -> None:
-        if not self.db:
+        """DB-Backup serverseitig auslösen (Daily-Cron läuft 03:15)."""
+        if not self.api_client:
+            self._on_backup_done("", _("Server nicht verbunden."))
             return
 
         self._backup_btn.set_sensitive(False)
 
         def worker():
             try:
-                src = self.db.db_path
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                dst = src.parent / f"lotto_backup_{timestamp}.db"
-                shutil.copy2(str(src), str(dst))
-                GLib.idle_add(self._on_backup_done, str(dst), None)
+                result = self.api_client.create_db_backup()
+                name = result.get("name", "?")
+                size = result.get("size_bytes", 0)
+                size_str = (
+                    f"{size / 1024 / 1024:.2f} MB"
+                    if size > 1024 * 1024
+                    else f"{size / 1024:.1f} KB"
+                )
+                GLib.idle_add(self._on_backup_done, f"{name} ({size_str})", None)
             except Exception as e:
                 GLib.idle_add(self._on_backup_done, "", str(e))
 
@@ -187,13 +199,12 @@ class Part4Mixin:
         users_data = []
 
         def load_users():
+            # D3: API-only.
             try:
-                if self.api_client and not self.db:
+                if self.api_client:
                     users_data.extend(self.api_client.list_users())
                 else:
-                    from lotto_analyzer.server.user_db import UserDatabase
-                    udb = UserDatabase(self.config_manager.data_dir / "users.db")
-                    users_data.extend(udb.list_users())
+                    logger.warning("load_users (telegram): kein api_client")
             except Exception as e:
                 logger.warning(f"Benutzerliste laden fehlgeschlagen: {e}")
             GLib.idle_add(_populate)

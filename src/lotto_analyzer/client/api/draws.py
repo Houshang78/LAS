@@ -19,7 +19,7 @@ class DrawsMixin:
         return self._request("PUT", "/settings/crawl", json=kwargs).json()
 
     def db_integrity(self) -> dict:
-        """DB-Integritätspruefung: Lücken erkennen."""
+        """DB-Integritätsprüfung: Lücken erkennen."""
         return self._request("GET", "/db/integrity").json()
 
     def get_latest_draw(self, draw_day: str) -> dict:

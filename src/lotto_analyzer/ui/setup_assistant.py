@@ -25,7 +25,7 @@ class SetupAssistant(Adw.Window):
     ):
         super().__init__(
             application=application,
-            title="LottoAnalyzer – Einrichtung",
+            title="lotto-analyzer – Einrichtung",
             default_width=600,
             default_height=500,
             modal=True,
@@ -103,7 +103,7 @@ class SetupAssistant(Adw.Window):
         page = Adw.PreferencesPage()
         group = Adw.PreferencesGroup(
             title="Verbindung",
-            description="Wohin soll sich LottoAnalyzer verbinden?",
+            description="Wohin soll sich lotto-analyzer verbinden?",
         )
         page.add(group)
 
@@ -155,7 +155,7 @@ class SetupAssistant(Adw.Window):
         return page
 
     def _on_host_changed(self, entry: Adw.EntryRow) -> None:
-        """Info-Label aktualisieren wenn Host sich aendert."""
+        """Info-Label aktualisieren wenn Host sich ändert."""
         if self._is_localhost():
             self._info_label.set_label(
                 "localhost = Lokaler Betrieb ohne Login (Admin-Modus)"
@@ -259,7 +259,7 @@ class SetupAssistant(Adw.Window):
         page = Adw.PreferencesPage()
         group = Adw.PreferencesGroup(
             title="Einrichtung abgeschlossen!",
-            description="LottoAnalyzer ist bereit.",
+            description="lotto-analyzer ist bereit.",
         )
         page.add(group)
 
@@ -322,7 +322,7 @@ class SetupAssistant(Adw.Window):
         config.server.port = int(self._port_spin.get_value())
         config.server.use_https = self._https_switch.get_active()
 
-        # Modus: immer Client (Server laeuft separat)
+        # Modus: immer Client (Server läuft separat)
         config.app_mode = AppMode.CLIENT
 
         # AI

@@ -1,7 +1,6 @@
 """Prediction-Qualität: Historische Trefferquoten und Strategie-Trends."""
 
 import json
-import sqlite3
 import threading
 from datetime import datetime
 
@@ -68,9 +67,9 @@ class PredictionQualityPage(BasePage):
         header.append(self._spinner)
         content.append(header)
 
-        # Chart 1: Trefferquote ueber Zeit (Linie)
+        # Chart 1: Trefferquote über Zeit (Linie)
         group1 = Adw.PreferencesGroup(
-            title=_("Trefferquote ueber Zeit"),
+            title=_("Trefferquote über Zeit"),
             description=_("Prozent der Predictions mit 3+ Treffern pro Zyklus"),
         )
         self._chart_hitrate = ChartView(figsize=(10, 3))
@@ -98,7 +97,7 @@ class PredictionQualityPage(BasePage):
         # Chart 4: ML-Training Fortschritt (Linie)
         group4 = Adw.PreferencesGroup(
             title=_("ML-Training Fortschritt"),
-            description=_("LSTM-Loss und Modell-Genauigkeit ueber Zeit"),
+            description=_("LSTM-Loss und Modell-Genauigkeit über Zeit"),
         )
         self._chart_ml = ChartView(figsize=(10, 3))
         group4.add(self._chart_ml)
@@ -136,68 +135,49 @@ class PredictionQualityPage(BasePage):
             data = {"reports": [], "strategy": [], "training": [], "accuracy": {}}
 
             try:
-                # Zyklus-Berichte (Trefferquote ueber Zeit)
+                # Zyklus-Berichte (Trefferquote über Zeit)
+                # D2: Architektur — Client ist UI-only, keine DB-Calls mehr.
+                # Vorher: api_client primär, self.app_db als Fallback. Jetzt:
+                # nur api_client. Wenn der nicht da ist, leere Daten + log.
                 if self.api_client:
                     if draw_day:
-                        data["reports"] = self.api_client.get_reports(
+                        data["reports"] = self.api_client.get_cycle_reports(
                             draw_day=draw_day, limit=50,
                         )
                     else:
-                        data["reports"] = self.api_client.get_reports(limit=50)
+                        data["reports"] = self.api_client.get_cycle_reports(limit=50)
                     if not isinstance(data["reports"], list):
-                        logger.warning("get_reports: unerwarteter Typ %s", type(data["reports"]))
+                        logger.warning("get_cycle_reports: unerwarteter Typ %s", type(data["reports"]))
                         data["reports"] = []
-                elif self.app_db:
-                    data["reports"] = self.app_db.get_cycle_reports(
-                        draw_day=draw_day, limit=50,
-                    )
+                else:
+                    logger.warning("Reports: kein api_client — Server offline?")
             except Exception as e:
                 logger.warning(f"Reports laden fehlgeschlagen: {e}")
 
             try:
-                # Strategie-Performance
+                # Strategie-Performance — pro Tag eine Server-Abfrage
                 if self.api_client:
                     days = [draw_day] if draw_day else ["saturday", "wednesday", "tuesday", "friday"]
-                    all_perf = []
+                    all_perf: list = []
                     for d in days:
-                        try:
-                            resp = self.api_client.strategy_performance(d)
-                            if not isinstance(resp, (dict, list)):
-                                logger.warning("strategy_performance(%s): unerwarteter Typ %s", d, type(resp))
-                                continue
-                            perf = resp.get("performance", []) if isinstance(resp, dict) else resp
-                            all_perf.extend(perf if isinstance(perf, list) else [])
-                        except Exception as e:
-                            logger.warning(f"Performance laden fehlgeschlagen ({day_str}): {e}")
+                        perf = self.api_client.get_strategy_performance(d)
+                        all_perf.extend(perf)
                     data["strategy"] = all_perf
-                elif self.db:
-                    data["strategy"] = self.db.get_strategy_performance(draw_day)
+                else:
+                    logger.warning("Strategy-Performance: kein api_client")
             except Exception as e:
                 logger.warning(f"Strategy-Performance laden fehlgeschlagen: {e}")
 
             try:
-                # ML-Training Runs
+                # ML-Training Runs — direkt vom Server (training-history endpoint)
                 if self.api_client:
-                    # ML-Status als Fallback (kein /ml/training-runs Endpoint)
-                    ml = self.api_client.ml_status()
-                    if not isinstance(ml, dict):
-                        logger.warning("ml_status: unerwarteter Typ %s", type(ml))
-                        ml = {}
-                    training_entries = []
-                    for day_key, info in ml.items():
-                        if isinstance(info, dict) and info.get("last_trained"):
-                            training_entries.append({
-                                "draw_day": day_key,
-                                "created_at": info.get("last_trained"),
-                                "test_loss": info.get("test_loss"),
-                                "accuracy": info.get("accuracy", info.get("test_accuracy")),
-                                "status": "completed",
-                            })
-                    data["training"] = training_entries
-                elif self.db:
-                    data["training"] = self.db.get_training_runs(
-                        draw_day=draw_day, limit=30,
-                    )
+                    days = [draw_day] if draw_day else ["saturday", "wednesday", "tuesday", "friday"]
+                    runs: list = []
+                    for d in days:
+                        runs.extend(self.api_client.get_training_runs(d, limit=30))
+                    data["training"] = runs
+                else:
+                    logger.warning("Training-Runs: kein api_client")
             except Exception as e:
                 logger.warning(f"Training-Runs laden fehlgeschlagen: {e}")
 
@@ -367,7 +347,7 @@ class PredictionQualityPage(BasePage):
             )
 
     def _plot_ml_progress(self, training: list) -> None:
-        """ML-Training LSTM-Loss ueber Zeit."""
+        """ML-Training LSTM-Loss über Zeit."""
         if not training:
             self._chart_ml.ax.clear()
             self._chart_ml.ax.set_title(_("Keine Training-Daten"))
@@ -389,7 +369,7 @@ class PredictionQualityPage(BasePage):
         if dates:
             self._chart_ml.plot_line(
                 dates, losses,
-                title=_("LSTM Test-Loss ueber Training-Laeufe"),
+                title=_("LSTM Test-Loss über Training-Laeufe"),
                 xlabel=_("Datum"), ylabel="Loss",
                 color="#e66100",
             )

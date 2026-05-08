@@ -13,7 +13,7 @@ class Part3Mixin:
     pass
 
     def _on_pred_tab_changed(self, btn) -> None:
-        """Tab gewechselt → gegenueberliegenden Button deaktivieren + Datum-Liste neu laden."""
+        """Tab gewechselt → gegenüberliegenden Button deaktivieren + Datum-Liste neu laden."""
         if not btn.get_active():
             return
         # Gegenseitiges Ausschliessen
@@ -36,22 +36,23 @@ class Part3Mixin:
         mine = self._is_mine_tab()
 
         def _fetch():
+            # B.7: API-only — purchased_visible_weeks Filter wird auf
+            # Client-Seite angewendet (nach Datum) statt im DB-Query.
             try:
-                if mine:
+                if not self.api_client:
+                    dates = []
+                elif mine:
                     weeks = self.config_manager.config.auto_generation.purchased_visible_weeks
-                    if self.app_mode == "client" and self.api_client:
-                        dates = self.api_client.get_purchased_dates(draw_day)
-                    elif self.db:
-                        dates = self.db.get_purchased_dates_within(draw_day, weeks)
+                    raw = self.api_client.get_purchased_dates(draw_day)
+                    # Client-side filter nach "letzte N Wochen"
+                    if weeks and weeks > 0:
+                        from datetime import date as _d, timedelta
+                        cutoff = (_d.today() - timedelta(weeks=weeks)).isoformat()
+                        dates = [d for d in raw if d >= cutoff]
                     else:
-                        dates = []
+                        dates = raw
                 else:
-                    if self.app_mode == "client" and self.api_client:
-                        dates = self.api_client.get_prediction_dates(draw_day)
-                    elif self.db:
-                        dates = self.db.get_prediction_dates(draw_day)
-                    else:
-                        dates = []
+                    dates = self.api_client.get_prediction_dates(draw_day)
             except Exception as e:
                 logger.error(f"Prediction-Daten laden: {e}")
                 dates = []
@@ -81,31 +82,20 @@ class Part3Mixin:
         self._pred_status.set_text(label)
 
         def _fetch():
+            # B.7: API-only — get_purchased_predictions / get_predictions_paginated.
             try:
-                if mine:
-                    if self.app_mode == "client" and self.api_client:
-                        data = self.api_client.get_purchased_predictions(
-                            draw_day, draw_date,
-                        )
-                        items = data.get("predictions", [])
-                    elif self.db:
-                        items = self.db.get_purchased_predictions(
-                            draw_day, draw_date,
-                        )
-                    else:
-                        items = []
+                if not self.api_client:
+                    items = []
+                elif mine:
+                    items = self.api_client.get_purchased_predictions(
+                        draw_day, draw_date,
+                    )
                 else:
-                    if self.app_mode == "client" and self.api_client:
-                        data = self.api_client.get_predictions(
-                            draw_day, draw_date, 0, self._PREDICTION_PAGE_SIZE,
-                        )
-                        items = data.get("predictions", [])
-                    elif self.db:
-                        items = self.db.get_predictions_paginated(
-                            draw_day, draw_date, 0, self._PREDICTION_PAGE_SIZE,
-                        )
-                    else:
-                        items = []
+                    data = self.api_client.get_predictions_paginated(
+                        draw_day, draw_date,
+                        offset=0, limit=self._PREDICTION_PAGE_SIZE,
+                    )
+                    items = data.get("predictions", [])
             except Exception as e:
                 logger.error(f"Predictions laden: {e}")
                 items = []

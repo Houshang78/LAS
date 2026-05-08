@@ -24,16 +24,17 @@ class Part1Mixin:
         self._cert_row.set_subtitle(_("Generiere..."))
 
         def worker():
+            # B.2: API-only — TLS-Cert wird vom Server selbst erzeugt
+            # und auf dem Server-Filesystem persistiert. Restart ist
+            # dann nötig damit der Server das neue Cert lädt.
             try:
-                from lotto_analyzer.server.tls import generate_self_signed_cert
-                cert_dir = self.config_manager._config_dir / "tls"
-                cert_path = cert_dir / "server.crt"
-                key_path = cert_dir / "server.key"
-                cert_file, key_file = generate_self_signed_cert(cert_path, key_path)
-                self.config_manager.config.server.ssl_certfile = cert_file
-                self.config_manager.config.server.ssl_keyfile = key_file
-                self.config_manager.save()
-                GLib.idle_add(self._on_cert_done, cert_file, None, button)
+                if not self.api_client:
+                    GLib.idle_add(self._on_cert_done, "", _("Server nicht verbunden"), button)
+                    return
+                resp = self.api_client.generate_tls_cert()
+                cert_file = resp.get("ssl_certfile", "")
+                err = resp.get("error")
+                GLib.idle_add(self._on_cert_done, cert_file, err, button)
             except Exception as e:
                 GLib.idle_add(self._on_cert_done, "", str(e), button)
 
@@ -68,7 +69,7 @@ class Part1Mixin:
         threading.Thread(target=worker, daemon=True).start()
 
     def _on_le_status_loaded(self, le_config: dict, tls_info: dict) -> bool:
-        """LE-Status in UI uebernehmen."""
+        """LE-Status in UI übernehmen."""
         # Felder befuellen
         self._le_domain.set_text(le_config.get("domain", ""))
         self._le_email.set_text(le_config.get("email", ""))

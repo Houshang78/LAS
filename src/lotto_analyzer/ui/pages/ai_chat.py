@@ -79,7 +79,7 @@ class AIChatPage(BasePage):
         self._ai_panel.set_vexpand(True)
         self.append(self._ai_panel)
 
-        # API-Key Warnung wenn noetig
+        # API-Key Warnung wenn nötig
         if not self._ai and self.app_mode != "client" and not self.api_client:
             self._ai_panel.add_message(
                 _("Kein API-Schlüssel konfiguriert. "

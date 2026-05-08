@@ -23,7 +23,6 @@ logger = get_logger("dashboard.part2")
 
 
 
-import sqlite3
 
 
 class Part2Mixin1:
@@ -75,7 +74,7 @@ class Part2Mixin1:
                 data = self.api_client.db_integrity()
                 GLib.idle_add(self._update_integrity_api_ui, data)
             except (ConnectionError, TimeoutError, OSError) as e:
-                logger.warning(f"API-Integritätspruefung fehlgeschlagen: {e}")
+                logger.warning(f"API-Integritätsprüfung fehlgeschlagen: {e}")
                 GLib.idle_add(
                     self._integrity_row.set_subtitle, _("Fehler bei Prüfung")
                 )

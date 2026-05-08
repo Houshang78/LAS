@@ -2,7 +2,6 @@
 
 import csv
 import io
-import sqlite3
 from pathlib import Path
 import threading
 from datetime import date, datetime
@@ -80,7 +79,7 @@ class GenerationMixin2:
         threading.Thread(target=worker, daemon=True).start()
 
     def _apply_weights_to_sliders(self, weights: dict[str, float]) -> bool:
-        """Gewichte in Slider uebernehmen."""
+        """Gewichte in Slider übernehmen."""
         for strat_key, val in weights.items():
             slider = self._weight_sliders.get(strat_key)
             if slider:

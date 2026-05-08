@@ -114,6 +114,83 @@ class BasePage(Gtk.Box):
         with self._op_lock:
             setattr(self, flag_name, False)
 
+    # ── D4.1: Connection / Toast Helpers ──
+
+    def show_toast(self, message: str) -> None:
+        """Kurze Banner-Notification über die Window-ToastOverlay.
+
+        Thread-safe: kann aus Worker-Thread aufgerufen werden, leitet
+        intern via GLib.idle_add an den Main-Thread weiter.
+        """
+        from lotto_analyzer.ui.ui_helpers import show_toast as _toast
+        try:
+            GLib.idle_add(lambda: (_toast(self, message) or False))
+        except Exception as e:
+            logger.debug(f"show_toast scheduling failed: {e}")
+
+    def show_api_error(self, action_label: str, exc: Exception) -> None:
+        """Connection/API-Error sichtbar machen — kein silent fail mehr.
+
+        Wird typischerweise im except-Block eines API-Calls aufgerufen:
+            except Exception as e:
+                self.show_api_error(_("Reports laden"), e)
+        """
+        msg = f"{action_label}: {type(exc).__name__}"
+        # Kurzbeschreibung — Stacktrace bleibt im Log
+        text = str(exc)
+        if text and len(text) < 80:
+            msg += f" — {text}"
+        logger.warning(f"{action_label} fehlgeschlagen: {exc}")
+        self.show_toast(msg)
+
+    # ── D4.3: Polling-Backoff ──
+
+    # State pro Page: aktuelle Failure-Streak + ob bereits in Backoff.
+    # Werden in __init__ von BasePage initialisiert via lazy-getattr.
+
+    def poll_should_skip(self) -> bool:
+        """True wenn aktueller Tick wegen Backoff übersprungen werden soll.
+
+        Aufruf-Pattern in einem _poll_tick:
+            if self.poll_should_skip():
+                return True  # GLib repeat
+            try:
+                ...api call...
+                self.poll_record_success()
+            except Exception as e:
+                self.poll_record_failure(e)
+        """
+        skip_until = getattr(self, "_poll_skip_until", 0.0)
+        return time.monotonic() < skip_until
+
+    def poll_record_success(self) -> None:
+        """API-Call hat funktioniert — Failure-Streak resetten."""
+        prev = getattr(self, "_poll_failures", 0)
+        self._poll_failures = 0
+        self._poll_skip_until = 0.0
+        if prev >= 3:
+            # War im Backoff, jetzt zurück online → User informieren.
+            self.show_toast(_("Server wieder erreichbar"))
+
+    def poll_record_failure(self, exc: Exception | None = None) -> None:
+        """API-Call hat versagt — Streak hochzählen, ggf. Backoff aktivieren.
+
+        Backoff-Schedule (bei Default-Polling):
+          1-2 Failures: nichts, normales Polling weiter
+          3.+ Failure: exponential backoff 30s/60s/120s/240s, max 600s
+          Plus once-only Toast bei Schwellen-Übergang.
+        """
+        n = getattr(self, "_poll_failures", 0) + 1
+        self._poll_failures = n
+        if exc is not None:
+            logger.warning(f"Poll failure #{n}: {type(exc).__name__}: {exc}")
+        if n == 3:
+            # Schwellwert erreicht — User informieren.
+            self.show_toast(_("Server nicht erreichbar — Polling pausiert"))
+        if n >= 3:
+            backoff = min(30 * (2 ** (n - 3)), 600)
+            self._poll_skip_until = time.monotonic() + backoff
+
     # ── Benutzerrolle ──
 
     @property
@@ -136,7 +213,7 @@ class BasePage(Gtk.Box):
     # ── Stale-Check ──
 
     def is_stale(self) -> bool:
-        """Prüft ob Daten veraltet sind (aelter als _refresh_interval)."""
+        """Prüft ob Daten veraltet sind (älter als _refresh_interval)."""
         return (time.monotonic() - self._last_refresh) > self._refresh_interval
 
     def mark_refreshed(self) -> None:
@@ -232,7 +309,7 @@ class BasePage(Gtk.Box):
         """Alle Timer entfernen und Cancel-Event setzen.
 
         Wird von Window bei Seitenwechsel und beim Schliessen aufgerufen.
-        Unterklassen koennen ueberschreiben (super().cleanup() aufrufen!).
+        Unterklassen koennen überschreiben (super().cleanup() aufrufen!).
         """
         # Alle registrierten Timer entfernen
         for timer_id in list(self._timers):

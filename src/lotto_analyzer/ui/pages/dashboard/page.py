@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import sqlite3
 import threading
 
 import gi
@@ -90,10 +89,10 @@ class DashboardPage(Part1Mixin, Part2Mixin, Part3Mixin, BasePage):
         # DB-Integrität
         self._integrity_group = Adw.PreferencesGroup(
             title=_("DB-Integrität"),
-            description=_("Vollständigkeitspruefung"),
+            description=_("Vollständigkeitsprüfung"),
         )
         self._integrity_group.set_header_suffix(
-            HelpButton(_("Prüft ob alle Ziehungen seit 1956 lueckenlos in der Datenbank vorhanden sind. Lücken = fehlende Jahre."))
+            HelpButton(_("Prüft ob alle Ziehungen seit 1956 lückenlos in der Datenbank vorhanden sind. Lücken = fehlende Jahre."))
         )
         content.append(self._integrity_group)
         self._integrity_row = Adw.ActionRow(
@@ -149,7 +148,7 @@ class DashboardPage(Part1Mixin, Part2Mixin, Part3Mixin, BasePage):
         rec_label.set_hexpand(True)
         rec_header_box.append(rec_label)
         rec_header_box.append(
-            HelpButton(_("Automatisch berechnete Tipp-Empfehlungen basierend auf Strategie-Scores. Hoehere Scores = bessere historische Trefferquote."))
+            HelpButton(_("Automatisch berechnete Tipp-Empfehlungen basierend auf Strategie-Scores. Höhere Scores = bessere historische Trefferquote."))
         )
         content.append(rec_header_box)
 

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import csv
 import io
-import sqlite3
 import threading
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -75,7 +74,7 @@ except ImportError:
 
 logger = get_logger("generator_page")
 
-# Ziehungsdatum-Berechnung (unabhaengig von core.generator)
+# Ziehungsdatum-Berechnung (unabhängig von core.generator)
 _DRAW_OVER_HOUR = {
     DrawDay.WEDNESDAY: 19, DrawDay.SATURDAY: 20,
     DrawDay.TUESDAY: 21, DrawDay.FRIDAY: 21,

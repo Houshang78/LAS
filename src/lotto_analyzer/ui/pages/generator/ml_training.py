@@ -147,7 +147,7 @@ class MlTrainingMixin:
 
         self._self_improve_task_id = task_id
 
-        # WS-Listener fuer instant Updates (Polling bleibt als Fallback)
+        # WS-Listener für instant Updates (Polling bleibt als Fallback)
         try:
             from lotto_analyzer.ui.widgets.ws_manager import ui_ws_manager
             ui_ws_manager.on("task_update", self._on_ws_self_improve_task)

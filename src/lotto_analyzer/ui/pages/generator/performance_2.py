@@ -116,7 +116,7 @@ class PerformanceMixin2:
         btn_box.append(self._hypersearch_btn)
 
         self._range_compare_btn = Gtk.Button(label=_("Zeitraum-Vergleich"))
-        self._range_compare_btn.set_tooltip_text(_("Vergleicht ML-Performance ueber verschiedene Zeiträume"))
+        self._range_compare_btn.set_tooltip_text(_("Vergleicht ML-Performance über verschiedene Zeiträume"))
         self._range_compare_btn.add_css_class("flat")
         self._range_compare_btn.set_icon_name("x-office-calendar-symbolic")
         self._range_compare_btn.connect("clicked", self._on_range_compare)
@@ -230,7 +230,7 @@ class PerformanceMixin2:
         self._training_task_id = task_id
         self._training_format_fn = format_fn
 
-        # WS-Listener fuer instant Updates (Polling bleibt als Fallback)
+        # WS-Listener für instant Updates (Polling bleibt als Fallback)
         try:
             from lotto_analyzer.ui.widgets.ws_manager import ui_ws_manager
             ui_ws_manager.on("task_update", self._on_ws_training_task)

@@ -251,7 +251,7 @@ class BacktestPage(BasePage):
             _("Läuft (fortgesetzt)") + f": {day_label} — " + _("Schritt") + f" {steps}/{total}"
         )
 
-        # Polling starten + WS-Listener fuer instant Updates
+        # Polling starten + WS-Listener für instant Updates
         if not self._poll_timer_id:
             self._poll_timer_id = GLib.timeout_add_seconds(self.POLL_INTERVAL, self._poll_progress)
         try:

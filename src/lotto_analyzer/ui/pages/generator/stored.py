@@ -209,13 +209,9 @@ class StoredMixin:
             return
 
         def _fetch():
+            # B.5: API-only.
             try:
-                if self.app_mode == "client" and self.api_client:
-                    dates = self.api_client.get_prediction_dates(draw_day)
-                elif self.db:
-                    dates = self.db.get_prediction_dates(draw_day)
-                else:
-                    dates = []
+                dates = self.api_client.get_prediction_dates(draw_day) if self.api_client else []
             except Exception as e:
                 logger.error(f"Prediction-Daten laden: {e}")
                 dates = []
@@ -249,20 +245,17 @@ class StoredMixin:
         self._stored_load_btn.set_sensitive(False)
 
         def _fetch():
+            # B.5: API-only — paginated-Endpoint liefert items + total.
             try:
-                if self.app_mode == "client" and self.api_client:
-                    data = self.api_client.get_predictions(
-                        draw_day, draw_date, offset, self._stored_page_size,
+                if not self.api_client:
+                    items, total = [], 0
+                else:
+                    data = self.api_client.get_predictions_paginated(
+                        draw_day, draw_date,
+                        offset=offset, limit=self._stored_page_size,
                     )
                     items = data.get("predictions", [])
                     total = data.get("total", 0)
-                elif self.db:
-                    items = self.db.get_predictions_paginated(
-                        draw_day, draw_date, offset, self._stored_page_size,
-                    )
-                    total = self.db.get_predictions_count(draw_day, draw_date)
-                else:
-                    items, total = [], 0
             except Exception as e:
                 logger.error(f"Stored predictions laden: {e}")
                 items, total = [], 0
@@ -337,7 +330,7 @@ class StoredMixin:
 
         self._stored_frame.set_visible(True)
 
-        # Hoehe explizit setzen: schrumpft bei wenig, max 600px
+        # Höhe explizit setzen: schrumpft bei wenig, max 600px
         row_h = 30
         h = min((len(items) + 1) * row_h, 600)  # +1 für Header
         self._stored_scroll.set_min_content_height(max(h, 80))
@@ -436,14 +429,12 @@ class StoredMixin:
         def _cleanup():
             try:
                 if self.app_mode == "client" and self.api_client:
-                    result = self.api_client.cleanup_predictions(
+                    # B.5: API-only — neue delete_low_match_predictions Methode
+                    # auf dem ApiClient (DELETE /predictions/cleanup/...).
+                    result = self.api_client.delete_low_match_predictions(
                         draw_day, draw_date, min_matches,
                     )
                     deleted = result.get("deleted", 0)
-                elif self.db:
-                    deleted = self.db.delete_low_match_predictions(
-                        draw_day, draw_date, min_matches,
-                    )
                 else:
                     deleted = 0
             except Exception as e:
@@ -503,15 +494,11 @@ class StoredMixin:
 
         def _fetch_all():
             try:
-                if self.app_mode == "client" and self.api_client:
+                if self.api_client:
                     data = self.api_client.get_predictions(
                         draw_day, draw_date, 0, 10000,
                     )
                     items = data.get("predictions", [])
-                elif self.db:
-                    items = self.db.get_predictions_paginated(
-                        draw_day, draw_date, 0, 10000,
-                    )
                 else:
                     items = []
             except Exception as e:

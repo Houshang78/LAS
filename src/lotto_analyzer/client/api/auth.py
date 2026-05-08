@@ -77,7 +77,7 @@ class AuthMixin:
         return data
 
     def login_local(self, username: str) -> dict:
-        """Localhost-Trust-Login — kein Passwort noetig."""
+        """Localhost-Trust-Login — kein Passwort nötig."""
         resp = self._client.post("/auth/login-local", params={"username": username})
         resp.raise_for_status()
         data = resp.json()

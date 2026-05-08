@@ -16,7 +16,6 @@ from lotto_common.models.game_config import GameType, get_config
 logger = get_logger("checker.part2")
 from lotto_common.models.ticket import LottoTicket
 
-import sqlite3
 
 
 class Part2Mixin:
@@ -34,12 +33,10 @@ class Part2Mixin:
         tip_cost = self._TIP_COSTS.get(game_type_val, 1.20)
 
         def _fetch():
+            # B.6: API-only — get_draw_prizes liefert direkt die Liste.
             try:
-                if self.api_client and not self.db:
-                    data = self.api_client.get_draw_prizes(draw_day, draw_date_iso)
-                    prizes = data.get("prizes", [])
-                elif self.db:
-                    prizes = self.db.get_draw_prizes(draw_day, draw_date_iso)
+                if self.api_client:
+                    prizes = self.api_client.get_draw_prizes(draw_day, draw_date_iso)
                 else:
                     prizes = []
             except Exception as e:
@@ -156,7 +153,7 @@ class Part2Mixin:
         self._check_btn.set_sensitive(False)
         self._spinner.set_visible(True)
         self._spinner.start()
-        self._result_row.set_title(_("Pruefe..."))
+        self._result_row.set_title(_("Prüfe..."))
         self._result_row.set_subtitle("")
 
         if self.api_client and not self.db:
@@ -177,7 +174,7 @@ class Part2Mixin:
                 except (ConnectionError, TimeoutError, OSError) as e:
                     GLib.idle_add(self._on_api_check_done, ticket, None, str(e))
                 except Exception as e:
-                    logger.exception(f"Unerwarteter Fehler bei API-Scheinpruefung: {e}")
+                    logger.exception(f"Unerwarteter Fehler bei API-Scheinprüfung: {e}")
                     GLib.idle_add(self._on_api_check_done, ticket, None, str(e))
 
             threading.Thread(target=api_worker, daemon=True).start()
