@@ -318,10 +318,9 @@ class MlSectionMixin:
         tuning_group.add(self._custom_train_status)
 
     def _on_custom_train(self, btn: Gtk.Button) -> None:
-        """Custom-Training mit benutzerdefinierten Parametern."""
-        self._init_ml_components()
-        if not self._model_trainer:
-            self._custom_train_status.set_label(_("ML-Engine nicht verfügbar"))
+        """Custom-Training mit benutzerdefinierten Parametern (API-only)."""
+        if not self.api_client:
+            self._custom_train_status.set_label(_("Server nicht verbunden."))
             return
 
         epochs = int(self._lstm_epochs_spin.get_value())
@@ -334,29 +333,14 @@ class MlSectionMixin:
             f"Training mit {epochs} Epochen, LR={lr:.4f}..."
         )
 
-        if self.app_mode == "client":
-            def worker():
-                try:
-                    client = self.api_client
-                    if not client:
-                        from lotto_analyzer.client.api_client import APIClient
-                        config = self.config_manager.config.server
-                        client = APIClient(config)
-                    result = client.train_ml_custom(epochs=epochs, lr=lr)
-                    GLib.idle_add(self._on_custom_train_done, result, None)
-                except Exception as e:
-                    GLib.idle_add(self._on_custom_train_done, {}, str(e))
-            threading.Thread(target=worker, daemon=True).start()
-        else:
-            def worker():
-                try:
-                    result = self._model_trainer.train_all(
-                        lstm_epochs=epochs, lstm_lr=lr,
-                    )
-                    GLib.idle_add(self._on_custom_train_done, result, None)
-                except Exception as e:
-                    GLib.idle_add(self._on_custom_train_done, {}, str(e))
-            threading.Thread(target=worker, daemon=True).start()
+        def worker():
+            try:
+                result = self.api_client.train_ml_custom(epochs=epochs, lr=lr)
+                GLib.idle_add(self._on_custom_train_done, result, None)
+            except Exception as e:
+                GLib.idle_add(self._on_custom_train_done, {}, str(e))
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def _on_custom_train_done(self, result: dict, error: str | None) -> bool:
         self._custom_train_btn.set_sensitive(True)
