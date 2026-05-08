@@ -388,22 +388,13 @@ class GenerationMixin1:
     def _fetch_ai_strategy_recommendation(
         self, draw_day: DrawDay,
     ) -> list[str]:
-        """AI-Empfehlung für optimale Strategien holen."""
-        if self.app_mode == "client" and self.api_client:
+        """AI-Empfehlung für optimale Strategien (API-only)."""
+        if self.api_client:
             try:
                 data = self.api_client.recommend_strategies(draw_day.value)
                 return data.get("strategies", ["ensemble"])
             except Exception as e:
                 logger.warning(f"API Strategie-Empfehlung fehlgeschlagen: {e}")
-
-        # Standalone: direkt AI fragen
-        if self._ai_analyst:
-            try:
-                result = self._ai_analyst.recommend_strategies(draw_day)
-                return result.get("strategies", ["ensemble"])
-            except Exception as e:
-                logger.warning(f"AI Strategie-Empfehlung fehlgeschlagen: {e}")
-
         return ["ensemble"]
 
     def _apply_ai_recommendation(self, strategies: list[str]) -> bool:

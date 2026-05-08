@@ -112,35 +112,19 @@ class MlSectionMixin:
         GLib.idle_add(self._refresh_combo_status)
 
     def _refresh_combo_status(self) -> bool:
-        """Combo-Status aus DB laden und UI aktualisieren."""
-        if self.app_mode == "client" and self.api_client:
-            draw_day = self._get_draw_day()
-
-            def worker():
-                try:
-                    data = self.api_client.combo_status(draw_day.value)
-                    status = data.get("status", [])
-                    active = data.get("active_models", [])
-                    GLib.idle_add(self._update_combo_ui, status, active)
-                except Exception as e:
-                    logger.warning(f"Combo-Status API-Abfrage fehlgeschlagen: {e}")
-
-            threading.Thread(target=worker, daemon=True).start()
+        """Combo-Status vom Server laden und UI aktualisieren (API-only)."""
+        if not self.api_client:
             return False
-
-        self._init_ml_components()
-        if not self._combo_evaluator or not self.db:
-            return False
-
         draw_day = self._get_draw_day()
 
         def worker():
             try:
-                status = self._combo_evaluator.get_combo_status(draw_day)
-                active = self._combo_evaluator.get_active_combo(draw_day)
+                data = self.api_client.combo_status(draw_day.value)
+                status = data.get("status", [])
+                active = data.get("active_models", [])
                 GLib.idle_add(self._update_combo_ui, status, active)
             except Exception as e:
-                logger.warning(f"Combo-Status Abfrage fehlgeschlagen: {e}")
+                logger.warning(f"Combo-Status API-Abfrage fehlgeschlagen: {e}")
 
         threading.Thread(target=worker, daemon=True).start()
         return False
@@ -213,21 +197,8 @@ class MlSectionMixin:
             self._combo_spinner.set_visible(False)
             return
 
-        if self.app_mode == "client" and self.api_client:
-            def worker():
-                try:
-                    data = self.api_client.generate_combos(draw_day.value, draw_date)
-                    success = data.get("success", 0)
-                    total = data.get("total", 0)
-                    GLib.idle_add(self._on_combo_gen_done, success, total, None)
-                except Exception as e:
-                    GLib.idle_add(self._on_combo_gen_done, 0, 0, str(e))
-            threading.Thread(target=worker, daemon=True).start()
-            return
-
-        self._init_ml_components()
-        if not self._combo_evaluator:
-            self._combo_status_label.set_label(_("ML-Engine nicht verfügbar"))
+        if not self.api_client:
+            self._combo_status_label.set_label(_("Server nicht verbunden."))
             btn.set_sensitive(True)
             self._combo_spinner.stop()
             self._combo_spinner.set_visible(False)
@@ -235,13 +206,10 @@ class MlSectionMixin:
 
         def worker():
             try:
-                results = self._combo_evaluator.generate_all_combos(
-                    draw_day, draw_date,
-                )
-                success = sum(1 for v in results.values() if v)
-                GLib.idle_add(
-                    self._on_combo_gen_done, success, len(results), None,
-                )
+                data = self.api_client.generate_combos(draw_day.value, draw_date)
+                success = data.get("success", 0)
+                total = data.get("total", 0)
+                GLib.idle_add(self._on_combo_gen_done, success, total, None)
             except Exception as e:
                 GLib.idle_add(self._on_combo_gen_done, 0, 0, str(e))
 

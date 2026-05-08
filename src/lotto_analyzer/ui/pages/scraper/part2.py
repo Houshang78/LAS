@@ -62,44 +62,32 @@ class Part2Mixin:
                 return
             self._crawling = True
 
-        # Client-Modus: Aktualisierung via API (jetzt Task-basiert)
-        if self.api_client and not self.db:
-            self._set_crawl_controls(False)
-            self._status_row.set_subtitle(_("Aktualisierung via Server..."))
-            self._crawl_result.set_visible(False)
-
-            def api_worker():
-                try:
-                    data = self.api_client.crawl_latest()
-                    task_id = data.get("task_id")
-                    if task_id:
-                        self._poll_crawl_task(task_id)
-                    else:
-                        GLib.idle_add(self._on_api_crawl_done, data, None)
-                except (ConnectionError, TimeoutError, OSError) as e:
-                    GLib.idle_add(self._on_api_crawl_done, None, str(e))
-                except Exception as e:
-                    logger.exception(f"Unerwarteter Fehler beim API-Refresh: {e}")
-                    GLib.idle_add(self._on_api_crawl_done, None, str(e))
-
-            threading.Thread(target=api_worker, daemon=True).start()
-            return
-
-        if not self.db:
+        # API-only: Aktualisierung via Server (Task-basiert)
+        if not self.api_client:
             with self._op_lock:
                 self._crawling = False
+            self._status_row.set_subtitle(_("Server nicht verbunden."))
             return
 
         self._set_crawl_controls(False)
-        self._status_row.set_subtitle(_("Prüfe neue Ziehungen..."))
+        self._status_row.set_subtitle(_("Aktualisierung via Server..."))
         self._crawl_result.set_visible(False)
 
-        # Standalone: Refresh nur via API verfügbar
-        logger.warning("Refresh nur via API verfügbar (core-Import entfernt)")
-        with self._op_lock:
-            self._crawling = False
-        self._set_crawl_controls(True)
-        self._status_row.set_subtitle(_("Nur im Server-Modus verfügbar"))
+        def api_worker():
+            try:
+                data = self.api_client.crawl_latest()
+                task_id = data.get("task_id")
+                if task_id:
+                    self._poll_crawl_task(task_id)
+                else:
+                    GLib.idle_add(self._on_api_crawl_done, data, None)
+            except (ConnectionError, TimeoutError, OSError) as e:
+                GLib.idle_add(self._on_api_crawl_done, None, str(e))
+            except Exception as e:
+                logger.exception(f"Unerwarteter Fehler beim API-Refresh: {e}")
+                GLib.idle_add(self._on_api_crawl_done, None, str(e))
+
+        threading.Thread(target=api_worker, daemon=True).start()
 
     def _on_refresh_done(self, new_count: int, all_draws: list) -> bool:
         with self._op_lock:
@@ -168,30 +156,27 @@ class Part2Mixin:
 
         logger.info(f"Auto-Retrain: {inserted} neue Ziehungen, starte ML-Training...")
 
-        if self.app_mode == "client" and self.api_client:
-            # Client-Modus: Training via Server-API
-            def retrain_worker():
-                try:
-                    self.api_client.train_ml()
-                    logger.info("Auto-Retrain via Server gestartet.")
-                except Exception as e:
-                    logger.warning(f"Auto-Retrain via Server fehlgeschlagen: {e}")
-
-            threading.Thread(target=retrain_worker, daemon=True).start()
+        if not self.api_client:
+            logger.warning("Auto-Retrain: kein api_client.")
             return
 
-        if not self.db:
-            return
+        def retrain_worker():
+            try:
+                self.api_client.train_ml()
+                logger.info("Auto-Retrain via Server gestartet.")
+            except Exception as e:
+                logger.warning(f"Auto-Retrain via Server fehlgeschlagen: {e}")
 
-        # Standalone: Auto-Retrain nur via API verfügbar
-        logger.warning("Auto-Retrain nur via API verfügbar (core-Import entfernt)")
+        threading.Thread(target=retrain_worker, daemon=True).start()
 
     # ═══════════════════════════════════════════
     # CSV-Import
     # ═══════════════════════════════════════════
 
     def _on_csv_import(self, button: Gtk.Button) -> None:
-        if not self.db and not self.api_client:
+        if not self.api_client:
+            self._csv_result.set_label(_("Server nicht verbunden."))
+            self._csv_result.set_visible(True)
             return
         from gi.repository import Gio
         dialog = Gtk.FileDialog()
@@ -225,27 +210,20 @@ class Part2Mixin:
         self._csv_result.set_label(_("Importiere %s...") % path)
         self._csv_result.set_visible(True)
 
-        if self.app_mode == "client" and self.api_client and not self.db:
-            # Client-Modus: Datei lesen und an Server senden
-            def api_worker():
-                try:
-                    with open(path, "r", encoding="utf-8-sig") as f:
-                        csv_content = f.read()
-                    data = self.api_client.import_csv(draw_day.value, csv_content)
-                    found = data.get("found", 0)
-                    inserted = data.get("inserted", 0)
-                    GLib.idle_add(self._on_csv_import_done, [None] * found, inserted, path)
-                except Exception as e:
-                    GLib.idle_add(self._csv_result.set_label, f"Fehler: {e}")
-                    GLib.idle_add(self._csv_result.set_visible, True)
+        # API-only: Datei lesen und an Server senden
+        def api_worker():
+            try:
+                with open(path, "r", encoding="utf-8-sig") as f:
+                    csv_content = f.read()
+                data = self.api_client.import_csv(draw_day.value, csv_content)
+                found = data.get("found", 0)
+                inserted = data.get("inserted", 0)
+                GLib.idle_add(self._on_csv_import_done, [None] * found, inserted, path)
+            except Exception as e:
+                GLib.idle_add(self._csv_result.set_label, f"Fehler: {e}")
+                GLib.idle_add(self._csv_result.set_visible, True)
 
-            threading.Thread(target=api_worker, daemon=True).start()
-            return
-
-        # Standalone: CSV-Import nur via API verfügbar
-        logger.warning("CSV-Import nur via API verfügbar (core-Import entfernt)")
-        self._csv_result.set_label(_("Nur im Server-Modus verfügbar"))
-        self._csv_result.set_visible(True)
+        threading.Thread(target=api_worker, daemon=True).start()
 
     def _on_csv_import_done(self, source_draws: list, inserted: int, path: str) -> bool:
         import os

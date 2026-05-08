@@ -166,8 +166,6 @@ class Part1Mixin:
                 cr.set_subtitle(str(cnt))
         return False
 
-    def _load_integrity_db(self) -> None:
-        """DB-Integrität prüfen (Standalone-Modus)."""
-        logger.warning("DB-Integritätsprüfung nur via API verfügbar (core-Import entfernt)")
-        self._integrity_row.set_subtitle(_("Nur im Server-Modus verfügbar"))
+    # _load_integrity_db entfernt: Standalone-Pfad gibt es nicht mehr,
+    # _load_integrity_api ist die einzige Quelle.
 
