@@ -101,6 +101,15 @@ class GenerationMixin2:
         modes = ["statistik", "backtest", "beide"]
         self._gen_mode = modes[idx] if idx < len(modes) else "statistik"
 
+        if not getattr(self, "_restoring_config", False):
+            if self.app_mode == "client" and self.api_client:
+                import threading as _t
+                _t.Thread(
+                    target=self._save_server_setting,
+                    args=("mode", self._gen_mode),
+                    daemon=True,
+                ).start()
+
         is_backtest = self._gen_mode in ("backtest", "beide")
         is_statistik = self._gen_mode in ("statistik", "beide")
 

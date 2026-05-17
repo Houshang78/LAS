@@ -69,9 +69,14 @@ class GenerationMixin3:
         self._train_via_server(draw_day, btn, epochs, lr)
 
     def set_api_client(self, client: "APIClient | None") -> None:
-        """API-Client setzen."""
+        """API-Client setzen — und sofort Server-UI-Settings laden,
+        damit beim ersten Tab-Open der korrekte tip_count/mode angezeigt
+        wird (statt des lokalen Defaults, der dann beim ersten refresh
+        nach 5min sichtbar zurueckspringt)."""
         super().set_api_client(client)
         self._ai_panel.api_client = client
+        if client is not None:
+            self._load_server_ui_settings()
 
     def refresh(self) -> None:
         """Generator-Daten nur neu laden wenn veraltet (>5min)."""
@@ -102,6 +107,12 @@ class GenerationMixin3:
                 saved = data["selected_strategies"]
                 for key, cb in self._strategy_checks.items():
                     cb.set_active(key in saved)
+            if "mode" in data:
+                mode = data["mode"]
+                modes = ["statistik", "backtest", "beide"]
+                if mode in modes:
+                    self._gen_mode = mode
+                    self._mode_combo.set_selected(modes.index(mode))
         finally:
             self._restoring_config = False
         return False
